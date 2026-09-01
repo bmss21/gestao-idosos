@@ -293,7 +293,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  getFirestore, initializeFirestore, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
+  getFirestore, initializeFirestore, memoryLocalCache, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 /* SUBSTITUI este objeto pelos dados do TEU projeto Firebase.
@@ -317,7 +317,11 @@ if(!NEEDS_SETUP){
   // bloqueiam o canal de ligação normal do Firestore mas permitem pedidos
   // HTTPS comuns. Este modo alternativo ("long polling") é mais lento mas
   // funciona nessas redes — por isso é usado logo à partida.
-  db = getFirestore(fbApp);
+  // Força o Firestore a trabalhar apenas em memória, sem depender do
+  // armazenamento local do navegador (IndexedDB) — evita bloqueios quando
+  // esse armazenamento está corrompido, em quota esgotada, ou desativado
+  // pelo navegador/dispositivo.
+  db = initializeFirestore(fbApp, {localCache: memoryLocalCache()});
 }
 
 /* ============================= DEPURAÇÃO DE ERROS ============================= */

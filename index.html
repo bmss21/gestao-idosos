@@ -337,15 +337,20 @@ window.addEventListener('error', (e)=>{
 window.addEventListener('unhandledrejection', (e)=>{
   showErrorBanner('Erro: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
 });
-function showErrorBanner(msg){
+function showErrorBanner(msg, type){
   let b = document.getElementById('error-banner');
   if(!b){
     b = document.createElement('div');
     b.id = 'error-banner';
-    b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#B0463C;color:#fff;padding:10px 16px;font:13px monospace;z-index:999;white-space:pre-wrap;';
     document.body.appendChild(b);
   }
+  const cor = type==='success' ? '#3E8B5B' : '#B0463C';
+  b.style.cssText = `position:fixed;top:0;left:0;right:0;background:${cor};color:#fff;padding:10px 16px;font:13px monospace;z-index:999;white-space:pre-wrap;`;
   b.textContent = msg;
+  clearTimeout(showErrorBanner._t);
+  if(type==='success'){
+    showErrorBanner._t = setTimeout(()=>{ if(b.textContent===msg) b.remove(); }, 3000);
+  }
 }
 
 /* ============================= ESTADO ============================= */
@@ -430,18 +435,19 @@ async function testarLigacao(){
 }
 
 function withTimeout(promise, ms, label){
-  // Regista o resultado REAL assim que chegar, mesmo que demore mais do que
-  // o tempo-limite abaixo — sem isto, o erro verdadeiro do Firebase fica
-  // escondido atrás da mensagem genérica de "tempo esgotado".
+  let jaExpirou = false;
+  // Só mostra o resultado tardio se o tempo-limite já tiver disparado
+  // primeiro — evita mostrar esta mensagem em gravações normais e rápidas.
   promise.then(
-    ()=>{ showErrorBanner(`[resposta tardia — ${label}] sucesso, chegou depois do tempo-limite.`); },
-    (err)=>{ showErrorBanner(`[resposta tardia — ${label}] ${err && err.code ? err.code+': ' : ''}${err && err.message ? err.message : err}`); }
+    ()=>{ if(jaExpirou) showErrorBanner(`Guardado com sucesso (demorou mais do que o esperado — ${label}).`, 'success'); },
+    (err)=>{ if(jaExpirou) showErrorBanner(`[resposta tardia — ${label}] ${err && err.code ? err.code+': ' : ''}${err && err.message ? err.message : err}`); }
   );
   return Promise.race([
     promise,
-    new Promise((_, reject)=> setTimeout(()=> reject(new Error(
-      `sem resposta do servidor em ${ms/1000}s — verifica a ligação à internet/rede (${label})`
-    )), ms))
+    new Promise((_, reject)=> setTimeout(()=>{
+      jaExpirou = true;
+      reject(new Error(`sem resposta do servidor em ${ms/1000}s — verifica a ligação à internet/rede (${label})`));
+    }, ms))
   ]);
 }
 

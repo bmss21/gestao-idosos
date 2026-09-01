@@ -441,29 +441,73 @@ function withTimeout(promise, ms, label){
   ]);
 }
 
+/* As escritas passam a ser feitas diretamente por pedidos HTTP (REST) em vez
+   de usar setDoc/updateDoc/deleteDoc do SDK, que ficam presos indefinidamente
+   nalguns dispositivos/navegadores (bug conhecido da biblioteca). As leituras
+   continuam a usar onSnapshot normalmente, que não tem este problema. */
+function toFirestoreValue(v){
+  if(v === null || v === undefined) return {nullValue: null};
+  if(typeof v === 'string') return {stringValue: v};
+  if(typeof v === 'number') return Number.isInteger(v) ? {integerValue: String(v)} : {doubleValue: v};
+  if(typeof v === 'boolean') return {booleanValue: v};
+  if(Array.isArray(v)) return {arrayValue: {values: v.map(toFirestoreValue)}};
+  if(typeof v === 'object') return {mapValue: {fields: toFirestoreFields(v)}};
+  return {stringValue: String(v)};
+}
+function toFirestoreFields(obj){
+  const fields = {};
+  for(const k in obj){ if(obj[k]!==undefined) fields[k] = toFirestoreValue(obj[k]); }
+  return fields;
+}
+async function restWriteDoc(collectionName, id, data){
+  const token = await auth.currentUser.getIdToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
+  const res = await withTimeout(fetch(url, {
+    method: 'PATCH',
+    headers: {'Authorization': 'Bearer '+token, 'Content-Type':'application/json'},
+    body: JSON.stringify({fields: toFirestoreFields(data)})
+  }), 8000, `guardar em ${collectionName}`);
+  if(!res.ok){
+    const errBody = await res.text().catch(()=>'');
+    throw new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
+  }
+}
+async function restDeleteDoc(collectionName, id){
+  const token = await auth.currentUser.getIdToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
+  const res = await withTimeout(fetch(url, {
+    method: 'DELETE',
+    headers: {'Authorization': 'Bearer '+token}
+  }), 8000, `eliminar de ${collectionName}`);
+  if(!res.ok){
+    const errBody = await res.text().catch(()=>'');
+    throw new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
+  }
+}
+
 async function idosoSave(id, data){
-  try{ await withTimeout(setDoc(doc(db,'idosos',id), data, {merge:true}), 8000, 'guardar idoso'); return true; }
+  try{ await restWriteDoc('idosos', id, data); return true; }
   catch(e){ showErrorBanner('Erro ao guardar idoso: ' + e.message); return false; }
 }
 async function idosoDelete(id){
-  try{ await withTimeout(deleteDoc(doc(db,'idosos',id)), 8000, 'eliminar idoso'); return true; }
+  try{ await restDeleteDoc('idosos', id); return true; }
   catch(e){ showErrorBanner('Erro ao eliminar idoso: ' + e.message); return false; }
 }
 async function idosoRegistarVisita(id, visita){
   try{
-    await withTimeout(updateDoc(doc(db,'idosos',id), {
-      visitas: arrayUnion(visita),
-      dataUltimaVisita: visita.dataHora
-    }), 8000, 'registar visita');
+    const i = findIdoso(id) || {};
+    const visitas = (i.visitas ? i.visitas.slice() : []);
+    visitas.push(visita);
+    await restWriteDoc('idosos', id, {...i, id, visitas, dataUltimaVisita: visita.dataHora});
     return true;
   }catch(e){ showErrorBanner('Erro ao registar visita: ' + e.message); return false; }
 }
 async function visitadorSave(id, data){
-  try{ await withTimeout(setDoc(doc(db,'visitadores',id), data, {merge:true}), 8000, 'guardar visitador'); return true; }
+  try{ await restWriteDoc('visitadores', id, data); return true; }
   catch(e){ showErrorBanner('Erro ao guardar visitador: ' + e.message); return false; }
 }
 async function visitadorDelete(id){
-  try{ await withTimeout(deleteDoc(doc(db,'visitadores',id)), 8000, 'eliminar visitador'); return true; }
+  try{ await restDeleteDoc('visitadores', id); return true; }
   catch(e){ showErrorBanner('Erro ao eliminar visitador: ' + e.message); return false; }
 }
 

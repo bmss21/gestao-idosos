@@ -766,7 +766,7 @@ function renderIdososTab(){
   let list = state.idosos.map(i=>({...i, _status:statusFor(ultimaVisitaInfo(i).data), _weeks: weeksSince(ultimaVisitaInfo(i).data)}));
   if(state.search.trim()){
     const q = state.search.trim().toLowerCase();
-    list = list.filter(i=> i.nome.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.morada||'').toLowerCase().includes(q));
+    list = list.filter(i=> i.nome.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.morada||'').toLowerCase().includes(q) || (i.idSiiopP||'').toLowerCase().includes(q));
   }
   list.sort((a,b)=> b._weeks - a._weeks);
 
@@ -1126,6 +1126,7 @@ function fichaHTML(id){
       <button class="close-x" data-action="close-modal">✕</button>
     </div>
     <div class="ficha-meta">
+      <div><div class="k">ID SIIOP-P</div><div class="v">${esc(i.idSiiopP||'—')}</div></div>
       <div><div class="k">Morada</div><div class="v">${esc(i.morada||'—')}</div></div>
       <div><div class="k">Contacto</div><div class="v">${esc(i.contacto||'—')}</div></div>
       <div><div class="k">Pessoa próxima</div><div class="v">${esc(i.pessoaProximaNome||'—')}</div></div>
@@ -1160,6 +1161,7 @@ function idosoFormHTML(id){
     </div>
     <form id="form-idoso" data-id="${editing?esc(id):''}" novalidate>
       <div class="field"><label>Nome completo *</label><input name="nome" value="${esc(i.nome)}"></div>
+      <div class="field"><label>ID SIIOP-P</label><input name="idSiiopP" value="${esc(i.idSiiopP)}"></div>
       <div class="field"><label>Morada completa *</label><input name="morada" value="${esc(i.morada)}"></div>
       <div class="field"><label>Contacto</label><input name="contacto" value="${esc(i.contacto)}"></div>
       <div class="field-row">
@@ -1341,6 +1343,7 @@ function attachModalHandlers(){
       const data = {
         id,
         nome,
+        idSiiopP: (fd.get('idSiiopP')||'').trim(),
         morada,
         contacto: (fd.get('contacto')||'').trim(),
         lat: parseCoord(fd.get('lat')),

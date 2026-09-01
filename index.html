@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#1E2A32;
@@ -788,7 +789,10 @@ function renderIdososTab(){
         <h2>Idosos</h2>
         <p>Fichas de acompanhamento, ordenadas por urgência de visita.</p>
       </div>
-      <button class="btn accent" data-action="new-idoso">+ Novo idoso</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ghost" data-action="import-excel">📄 Importar Excel</button>
+        <button class="btn accent" data-action="new-idoso">+ Novo idoso</button>
+      </div>
     </div>
     <div class="toolbar">
       <input type="text" id="search-idosos" placeholder="Procurar por nome, ID ou morada…" value="${esc(state.search)}">
@@ -1124,6 +1128,7 @@ function renderModal(){
   if(type==='idosoForm') inner = idosoFormHTML(payload);
   if(type==='visitadorForm') inner = visitadorFormHTML(payload);
   if(type==='reportPreview') inner = reportPreviewHTML(payload);
+  if(type==='importExcel') inner = importExcelHTML(payload);
 
   const wrap = document.createElement('div');
   wrap.className = 'overlay';
@@ -1256,6 +1261,117 @@ function reportPreviewHTML(payload){
   `;
 }
 
+/* ============================= IMPORTAR EXCEL ============================= */
+function normalizarCabecalho(s){
+  return String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // remove acentos
+    .replace(/[^a-z0-9]/g,''); // remove espaços/pontuação
+}
+const MAPA_COLUNAS = {
+  nome: ['nome','nomecompleto'],
+  idSiiopP: ['idsiiopp','siiopp','idsiiop','siiop'],
+  morada: ['morada','moradacompleta','endereco'],
+  contacto: ['contacto','telefone','contato'],
+  pessoaProximaNome: ['pessoaproxima','nomepessoaproxima','contactodeemergencianome','pessoacontacto'],
+  pessoaProximaContacto: ['contactopessoaproxima','telefonepessoaproxima','contactodeemergencia'],
+  lat: ['lat','latitude'],
+  lng: ['lng','lon','long','longitude']
+};
+function mapearLinha(row){
+  // row: objeto com as chaves originais do Excel (cabeçalhos tal como estão)
+  const normalizados = {};
+  Object.keys(row).forEach(k=>{ normalizados[normalizarCabecalho(k)] = row[k]; });
+  const out = {};
+  Object.keys(MAPA_COLUNAS).forEach(campo=>{
+    for(const alvo of MAPA_COLUNAS[campo]){
+      if(normalizados[alvo]!=null && normalizados[alvo]!==''){ out[campo] = normalizados[alvo]; break; }
+    }
+  });
+  return out;
+}
+async function processarFicheiroExcel(file){
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, {type:'array'});
+  const primeiraFolha = wb.Sheets[wb.SheetNames[0]];
+  const linhas = XLSX.utils.sheet_to_json(primeiraFolha, {defval:''});
+  const mapeadas = linhas.map(mapearLinha).filter(r=>r.nome); // ignora linhas sem nome
+  state.modal = {type:'importExcel', payload:{rows: mapeadas, ficheiro: file.name}};
+  render();
+}
+function importExcelHTML(payload){
+  const rows = payload && payload.rows;
+  if(!rows){
+    return `
+      <div class="modal-head"><h2>Importar Excel</h2><button class="close-x" data-action="close-modal">✕</button></div>
+      <p class="hint">Escolhe um ficheiro .xlsx ou .xls. A primeira linha deve ter os nomes das colunas — a app tenta reconhecer automaticamente colunas como "Nome", "Morada", "ID SIIOP-P", "Contacto", "Pessoa Próxima", "Contacto Pessoa Próxima", "Latitude" e "Longitude" (não é preciso teres todas).</p>
+      <div class="field">
+        <input type="file" id="input-excel" accept=".xlsx,.xls">
+      </div>
+      <p id="import-status" class="hint"></p>
+    `;
+  }
+  if(rows.length===0){
+    return `
+      <div class="modal-head"><h2>Importar Excel</h2><button class="close-x" data-action="close-modal">✕</button></div>
+      <p class="hint">Não foi possível encontrar linhas com nome preenchido em "${esc(payload.ficheiro)}". Confirma que a primeira linha tem os cabeçalhos das colunas.</p>
+      <div class="modal-actions"><button class="btn ghost" type="button" data-action="close-modal">Fechar</button></div>
+    `;
+  }
+  return `
+    <div class="modal-head"><h2>Importar Excel</h2><button class="close-x" data-action="close-modal">✕</button></div>
+    <p class="hint">${rows.length} idoso(s) encontrados em "${esc(payload.ficheiro)}". Confirma a pré-visualização antes de importar:</p>
+    <div style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;">
+      <table style="border:none;">
+        <thead><tr><th>Nome</th><th>ID SIIOP-P</th><th>Morada</th><th>Contacto</th></tr></thead>
+        <tbody>
+          ${rows.slice(0,50).map(r=>`
+            <tr>
+              <td>${esc(r.nome||'—')}</td>
+              <td class="mono">${esc(r.idSiiopP||'—')}</td>
+              <td>${esc(r.morada||'—')}</td>
+              <td>${esc(r.contacto||'—')}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${rows.length>50 ? `<p class="hint">A mostrar as primeiras 50 de ${rows.length} linhas — todas serão importadas.</p>` : ''}
+    <p id="import-status" class="hint"></p>
+    <div class="modal-actions">
+      <button class="btn accent" type="button" data-action="confirmar-importacao">Importar ${rows.length} idoso(s)</button>
+      <button class="btn ghost" type="button" data-action="close-modal">Cancelar</button>
+    </div>
+  `;
+}
+async function confirmarImportacao(){
+  const rows = state.modal && state.modal.payload && state.modal.payload.rows;
+  if(!rows || rows.length===0) return;
+  const statusEl = document.getElementById('import-status');
+  let sucesso = 0, falhas = 0;
+  for(let idx=0; idx<rows.length; idx++){
+    if(statusEl) statusEl.textContent = `A importar ${idx+1} de ${rows.length}…`;
+    const r = rows[idx];
+    const id = uid('ID', state.idosos.concat(Array(sucesso))); // evita reaproveitar o mesmo id dentro do lote
+    const data = {
+      id,
+      nome: String(r.nome||'').trim(),
+      idSiiopP: String(r.idSiiopP||'').trim(),
+      morada: String(r.morada||'').trim(),
+      contacto: String(r.contacto||'').trim(),
+      pessoaProximaNome: String(r.pessoaProximaNome||'').trim(),
+      pessoaProximaContacto: String(r.pessoaProximaContacto||'').trim(),
+      lat: r.lat!=null && r.lat!=='' ? parseCoord(r.lat) : null,
+      lng: r.lng!=null && r.lng!=='' ? parseCoord(r.lng) : null,
+      visitas: [],
+      dataUltimaVisita: null
+    };
+    const ok = await idosoSave(id, data);
+    if(ok){ sucesso++; state.idosos.push(data); } else { falhas++; }
+  }
+  state.modal = null;
+  render();
+  showToast(`Importação concluída: ${sucesso} idoso(s) importados${falhas?`, ${falhas} falharam`:''}.`);
+}
+
 /* ============================= HANDLERS ============================= */
 function attachGlobalHandlers(){
   document.querySelectorAll('.tab-btn').forEach(b=>{
@@ -1301,6 +1417,8 @@ function attachGlobalHandlers(){
       }
       else if(action==='close-modal'){ closeModal(); }
       else if(action==='geocode-morada'){ geocodeMorada(); }
+      else if(action==='import-excel'){ state.modal={type:'importExcel', payload:null}; render(); }
+      else if(action==='confirmar-importacao'){ confirmarImportacao(); }
       else if(action==='logout'){ signOut(auth); }
       else if(action==='testar-ligacao'){ testarLigacao(); }
       else if(action==='select-atrasados'){ selecionarAtrasados(); }
@@ -1345,6 +1463,20 @@ function attachGlobalHandlers(){
 }
 
 function attachModalHandlers(){
+  const inputExcel = document.getElementById('input-excel');
+  if(inputExcel){
+    inputExcel.onchange = async ()=>{
+      const file = inputExcel.files[0];
+      if(!file) return;
+      const statusEl = document.getElementById('import-status');
+      if(statusEl) statusEl.textContent = 'A ler o ficheiro…';
+      try{
+        await processarFicheiroExcel(file);
+      }catch(e){
+        showErrorBanner('Erro ao ler o ficheiro Excel: ' + e.message);
+      }
+    };
+  }
   const idosoForm = document.getElementById('form-idoso');
   if(idosoForm){
     idosoForm.querySelector('[name=lat]').oninput = updateVerMapaLink;

@@ -268,8 +268,10 @@
     .idoso-row .status-label{width:auto;text-align:left;}
     .field-row{grid-template-columns:1fr;}
     .ficha-meta{grid-template-columns:1fr;}
-    .btn{padding:7px 13px;font-size:12.5px;border-radius:5px;}
-    .btn.sm{padding:5px 10px;font-size:11px;}
+    .btn{padding:5px 10px;font-size:11px;border-radius:5px;font-weight:700;}
+    .btn.sm{padding:4px 8px;font-size:10px;}
+    .btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--ink);}
+    .btn.danger{background:var(--red-tint);border:1.5px solid var(--red);}
   }
   .login-wrap{min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:20px;}
   .login-card{max-width:380px;width:100%;}
@@ -937,8 +939,21 @@ async function gerarTrajeto(){
   const optimizeEl = document.getElementById('optimize-route');
   const optimize = optimizeEl ? optimizeEl.checked : true;
   const useLocationEl = document.getElementById('use-my-location');
-  const origin = (useLocationEl && useLocationEl.checked) ? await getUserLocation() : null;
-  const url = buildMapsRouteUrl(points, origin, optimize);
+  let origin, destPoints;
+  if(useLocationEl && useLocationEl.checked){
+    // Usa a localização do dispositivo como ponto de partida; todos os
+    // idosos selecionados entram na rota como paragens.
+    origin = await getUserLocation();
+    destPoints = points;
+  } else {
+    // Sem localização do dispositivo: usa o próprio idoso mais urgente como
+    // ponto de partida, para o Google Maps não adivinhar uma localização
+    // aproximada e imprecisa (ex: a do fornecedor de internet).
+    origin = points[0];
+    destPoints = points.slice(1);
+    if(destPoints.length===0) destPoints = points; // só havia 1 selecionado
+  }
+  const url = buildMapsRouteUrl(destPoints, origin, optimize);
   if(newTab) newTab.location.href = url;
   else window.open(url, '_blank', 'noopener');
 }

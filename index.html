@@ -300,12 +300,12 @@ import {
    Encontras isto em: Firebase Console > Definições do projeto > Geral >
    "As tuas apps" > app Web > SDK setup and configuration. */
 const firebaseConfig = {
-  apiKey: "AIzaSyB18lJRtujYk9jDWariQW6WeCWI8Qm_ZnU",
-  authDomain: "idosos-oaz.firebaseapp.com",
-  projectId: "idosos-oaz",
-  storageBucket: "idosos-oaz.firebasestorage.app",
-  messagingSenderId: "24875299847",
-  appId: "1:24875299847:web:7a831206ad747ac24ba6a2"
+  apiKey: "AIzaSyDwwZj_yGXeKs3D5Vxxx3z6HIURPu2R4BQ",
+  authDomain: "idosos-oaz-v2.firebaseapp.com",
+  projectId: "idosos-oaz-v2",
+  storageBucket: "idosos-oaz-v2.firebasestorage.app",
+  messagingSenderId: "915370419185",
+  appId: "1:915370419185:web:63b614013d2444c3915a50"
 };
 
 const NEEDS_SETUP = firebaseConfig.apiKey.startsWith('COLOCA_AQUI');
@@ -317,7 +317,7 @@ if(!NEEDS_SETUP){
   // bloqueiam o canal de ligação normal do Firestore mas permitem pedidos
   // HTTPS comuns. Este modo alternativo ("long polling") é mais lento mas
   // funciona nessas redes — por isso é usado logo à partida.
-  db = initializeFirestore(fbApp, {experimentalForceLongPolling:true, useFetchStreams:false});
+  db = getFirestore(fbApp);
 }
 
 /* ============================= DEPURAÇÃO DE ERROS ============================= */

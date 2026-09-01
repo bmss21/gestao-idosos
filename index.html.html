@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rede de Visitas — Gestão de Idosos</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{
+    --ink:#1E2A32;
+    --paper:#F0F2EA;
+    --paper-raised:#FFFFFF;
+    --accent:#7A3B46;
+    --accent-soft:#C98A96;
+    --accent-tint:#F3E6E8;
+    --line:#D8D2C4;
+    --green:#3E8B5B;
+    --green-tint:#E4EFE6;
+    --yellow:#B5872A;
+    --yellow-tint:#F5EDDB;
+    --red:#B0463C;
+    --red-tint:#F5E3E0;
+    --muted:#6B6558;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.display{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    letter-spacing:-0.01em;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  #app{display:flex;min-height:100vh;}
+
+  /* --- Sidebar: filing-tab navigation --- */
+  .sidebar{
+    width:220px;
+    flex-shrink:0;
+    background:var(--ink);
+    color:#EDE9DE;
+    display:flex;
+    flex-direction:column;
+    padding:28px 0 16px;
+  }
+  .brand{
+    padding:0 20px 24px;
+    border-bottom:1px solid rgba(237,233,222,0.15);
+    margin-bottom:8px;
+  }
+  .brand .eyebrow{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+    color:var(--accent-soft);
+    margin-bottom:4px;
+  }
+  .brand h1{font-size:20px;margin:0;color:#fff;line-height:1.15;}
+  nav{display:flex;flex-direction:column;margin-top:8px;}
+  .tab-btn{
+    position:relative;
+    text-align:left;
+    background:none;
+    border:none;
+    color:#C9C4B4;
+    font-family:'Inter',sans-serif;
+    font-size:14.5px;
+    font-weight:500;
+    padding:13px 20px 13px 24px;
+    cursor:pointer;
+    border-left:3px solid transparent;
+    transition:background .15s, color .15s;
+  }
+  .tab-btn:hover{background:rgba(255,255,255,0.05);color:#fff;}
+  .tab-btn.active{
+    background:var(--paper);
+    color:var(--ink);
+    border-left:3px solid var(--accent);
+    font-weight:600;
+    border-radius:0 4px 4px 0;
+    margin-right:0;
+  }
+  .tab-count{
+    float:right;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    opacity:0.7;
+  }
+  .sidebar-foot{
+    margin-top:auto;
+    padding:14px 20px 0;
+    font-size:11px;
+    color:#8B8676;
+    border-top:1px solid rgba(237,233,222,0.15);
+    line-height:1.5;
+  }
+
+  main{flex:1;padding:32px 40px;max-width:1100px;}
+  .page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
+  .page-head h2{font-size:26px;margin:0 0 4px;}
+  .page-head p{margin:0;color:var(--muted);font-size:14px;}
+
+  button{font-family:'Inter',sans-serif;cursor:pointer;}
+  .btn{
+    background:var(--ink);color:#fff;border:none;border-radius:6px;
+    padding:10px 18px;font-size:14px;font-weight:600;
+  }
+  .btn:hover{background:#0f171c;}
+  .btn.accent{background:var(--accent);}
+  .btn.accent:hover{background:#5f2e37;}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);}
+  .btn.ghost:hover{background:#fff;}
+  .btn.danger{background:transparent;color:var(--red);border:1px solid var(--red);}
+  .btn.danger:hover{background:var(--red-tint);}
+  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:5px;}
+  .btn:disabled{opacity:0.45;cursor:not-allowed;}
+
+  input,select,textarea{
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    padding:9px 11px;
+    border:1px solid var(--line);
+    border-radius:5px;
+    background:#fff;
+    color:var(--ink);
+    width:100%;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);outline-offset:0;border-color:var(--accent);}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.03em;}
+  .field{margin-bottom:14px;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .hint{font-size:12px;color:var(--muted);margin-top:4px;}
+
+  /* --- index card motif --- */
+  .card{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:16px 18px;
+    position:relative;
+    box-shadow:0 1px 2px rgba(30,42,50,0.04);
+  }
+  .toolbar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+  .toolbar input[type=text]{max-width:280px;}
+  .sort-note{font-size:12.5px;color:var(--muted);margin-left:auto;}
+
+  .idoso-list{display:flex;flex-direction:column;gap:10px;}
+  .idoso-row{
+    display:flex;align-items:center;gap:14px;
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-left:5px solid var(--muted);
+    border-radius:7px;
+    padding:13px 16px;
+    cursor:pointer;
+    transition:transform .1s, box-shadow .1s;
+  }
+  .idoso-row:hover{box-shadow:0 3px 10px rgba(30,42,50,0.08);transform:translateY(-1px);}
+  .idoso-row.status-green{border-left-color:var(--green);}
+  .idoso-row.status-yellow{border-left-color:var(--yellow);}
+  .idoso-row.status-red{border-left-color:var(--red);}
+  .stamp{
+    width:11px;height:11px;border-radius:50%;flex-shrink:0;
+  }
+  .stamp.status-green{background:var(--green);}
+  .stamp.status-yellow{background:var(--yellow);}
+  .stamp.status-red{background:var(--red);}
+  .idoso-row .id{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);width:62px;flex-shrink:0;}
+  .idoso-row .nome{font-weight:600;flex:1;min-width:120px;}
+  .idoso-row .morada{color:var(--muted);font-size:13px;flex:1.4;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .idoso-row .status-label{font-size:12.5px;font-weight:600;width:150px;flex-shrink:0;text-align:right;}
+  .status-label.status-green{color:var(--green);}
+  .status-label.status-yellow{color:var(--yellow);}
+  .status-label.status-red{color:var(--red);}
+  .empty{
+    text-align:center;padding:50px 20px;color:var(--muted);
+    border:1px dashed var(--line);border-radius:8px;background:#fff;
+  }
+
+  /* --- modal / ficha --- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(30,42,50,0.45);
+    display:flex;align-items:flex-start;justify-content:center;
+    padding:40px 20px;overflow-y:auto;z-index:50;
+  }
+  .modal{
+    background:var(--paper-raised);
+    border-radius:10px;
+    width:100%;max-width:620px;
+    padding:26px 28px 28px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.25);
+  }
+  .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;}
+  .modal-head h2{margin:0;font-size:21px;}
+  .close-x{background:none;border:none;font-size:20px;color:var(--muted);line-height:1;padding:4px;}
+  .close-x:hover{color:var(--ink);}
+  .ficha-meta{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin-bottom:16px;}
+  .ficha-meta .k{font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted);margin-bottom:2px;}
+  .ficha-meta .v{font-size:14.5px;}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:4px 11px;border-radius:20px;font-size:12.5px;font-weight:600;
+  }
+  .status-pill.status-green{background:var(--green-tint);color:var(--green);}
+  .status-pill.status-yellow{background:var(--yellow-tint);color:var(--yellow);}
+  .status-pill.status-red{background:var(--red-tint);color:var(--red);}
+  hr.div{border:none;border-top:1px solid var(--line);margin:18px 0;}
+  .hist-item{border-left:2px solid var(--line);padding:2px 0 14px 14px;position:relative;}
+  .hist-item::before{content:'';position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--accent);}
+  .hist-item .date{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);}
+  .hist-item .who{font-size:12.5px;color:var(--muted);margin-top:1px;}
+  .hist-item .obs{font-size:14px;margin-top:4px;}
+  .modal-actions{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;}
+
+  /* --- map --- */
+  #map{height:560px;border-radius:8px;border:1px solid var(--line);}
+  .legend{display:flex;gap:18px;margin:0 0 14px;font-size:13px;flex-wrap:wrap;}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .legend .dot{width:10px;height:10px;border-radius:50%;}
+  .marker-pin{
+    width:22px;height:22px;border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);
+    border:2px solid #fff;
+    box-shadow:0 1px 4px rgba(0,0,0,0.4);
+  }
+  .popup-name{font-weight:700;font-family:'Fraunces',serif;font-size:15px;margin-bottom:2px;}
+  .popup-row{font-size:12.5px;color:var(--muted);margin-top:2px;}
+
+  /* --- table (visitadores) --- */
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;border:1px solid var(--line);}
+  th,td{text-align:left;padding:11px 14px;font-size:13.5px;border-bottom:1px solid var(--line);}
+  th{background:#F7F5EE;font-size:11.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted);font-weight:600;}
+  tr:last-child td{border-bottom:none;}
+  td.actions{text-align:right;white-space:nowrap;}
+
+  /* --- report --- */
+  .report-box{
+    background:#FBFAF6;border:1px solid var(--line);border-radius:7px;
+    padding:16px 18px;font-family:'IBM Plex Mono',monospace;font-size:13px;
+    white-space:pre-wrap;line-height:1.6;margin:14px 0;
+  }
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:11px 20px;border-radius:6px;
+    font-size:13.5px;box-shadow:0 6px 18px rgba(0,0,0,0.25);z-index:100;
+    opacity:0;transition:opacity .2s;pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+
+  @media (max-width: 760px){
+    #app{flex-direction:column;}
+    .sidebar{width:100%;flex-direction:row;overflow-x:auto;padding:14px;}
+    .brand{display:none;}
+    nav{flex-direction:row;margin-top:0;}
+    .tab-btn{border-left:none;border-bottom:3px solid transparent;white-space:nowrap;padding:10px 14px;}
+    .tab-btn.active{border-left:none;border-bottom:3px solid var(--accent);border-radius:4px 4px 0 0;}
+    .sidebar-foot{display:none;}
+    main{padding:22px 16px;}
+    .idoso-row{flex-wrap:wrap;}
+    .idoso-row .status-label{width:auto;text-align:left;}
+    .field-row{grid-template-columns:1fr;}
+    .ficha-meta{grid-template-columns:1fr;}
+    .btn{padding:5px 10px;font-size:11px;border-radius:5px;font-weight:700;}
+    .btn.sm{padding:4px 8px;font-size:10px;}
+    .btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--ink);}
+    .btn.danger{background:var(--red-tint);border:1.5px solid var(--red);}
+  }
+  .login-wrap{min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .login-card{max-width:380px;width:100%;}
+  .login-card .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:0.12em;color:var(--accent);margin-bottom:4px;}
+  .login-card h2{margin:0 0 4px;}
+  .login-card p.hint{margin-bottom:18px;}
+  .setup-wrap{max-width:640px;margin:40px auto;padding:0 20px;}
+  .setup-wrap ol{padding-left:20px;line-height:1.9;}
+  .setup-wrap code, .setup-wrap pre{background:#F7F5EE;border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;}
+  .setup-wrap pre{padding:14px;overflow-x:auto;white-space:pre-wrap;}
+  .sidebar-user{padding:12px 20px;border-top:1px solid rgba(237,233,222,0.15);font-size:12px;color:#C9C4B4;}
+  .sidebar-user .email{display:block;margin-bottom:8px;word-break:break-all;color:#EDE9DE;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+/* ============================= FIREBASE ============================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import {
+  getFirestore, initializeFirestore, memoryLocalCache, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+/* SUBSTITUI este objeto pelos dados do TEU projeto Firebase.
+   Encontras isto em: Firebase Console > Definições do projeto > Geral >
+   "As tuas apps" > app Web > SDK setup and configuration. */
+const firebaseConfig = {
+  apiKey: "AIzaSyDwwZj_yGXeKs3D5Vxxx3z6HIURPu2R4BQ",
+  authDomain: "idosos-oaz-v2.firebaseapp.com",
+  projectId: "idosos-oaz-v2",
+  storageBucket: "idosos-oaz-v2.firebasestorage.app",
+  messagingSenderId: "915370419185",
+  appId: "1:915370419185:web:63b614013d2444c3915a50"
+};
+
+const NEEDS_SETUP = firebaseConfig.apiKey.startsWith('COLOCA_AQUI');
+let auth, db;
+if(!NEEDS_SETUP){
+  const fbApp = initializeApp(firebaseConfig);
+  auth = getAuth(fbApp);
+  // Algumas redes (tablets com perfis restritos, redes de escolas/empresas)
+  // bloqueiam o canal de ligação normal do Firestore mas permitem pedidos
+  // HTTPS comuns. Este modo alternativo ("long polling") é mais lento mas
+  // funciona nessas redes — por isso é usado logo à partida.
+  // Força o Firestore a trabalhar apenas em memória, sem depender do
+  // armazenamento local do navegador (IndexedDB) — evita bloqueios quando
+  // esse armazenamento está corrompido, em quota esgotada, ou desativado
+  // pelo navegador/dispositivo.
+  db = initializeFirestore(fbApp, {localCache: memoryLocalCache()});
+}
+
+/* ============================= DEPURAÇÃO DE ERROS ============================= */
+/* Mostra qualquer erro JS diretamente no ecrã — útil porque não temos acesso
+   à consola do navegador de quem está a usar a app. */
+window.addEventListener('error', (e)=>{
+  showErrorBanner('Erro: ' + (e.message||'desconhecido'));
+});
+window.addEventListener('unhandledrejection', (e)=>{
+  showErrorBanner('Erro: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+function showErrorBanner(msg, type){
+  let b = document.getElementById('error-banner');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'error-banner';
+    document.body.appendChild(b);
+  }
+  const cor = type==='success' ? '#3E8B5B' : '#B0463C';
+  b.style.cssText = `position:fixed;top:0;left:0;right:0;background:${cor};color:#fff;padding:10px 16px;font:13px monospace;z-index:999;white-space:pre-wrap;`;
+  b.textContent = msg;
+  clearTimeout(showErrorBanner._t);
+  if(type==='success'){
+    showErrorBanner._t = setTimeout(()=>{ if(b.textContent===msg) b.remove(); }, 3000);
+  }
+}
+
+/* ============================= ESTADO ============================= */
+let state = {
+  user: null,
+  idosos: [],
+  visitadores: [],
+  loaded: false,
+  idososLoaded: false,
+  visitadoresLoaded: false,
+  activeTab: 'idosos',
+  search: '',
+  modal: null,      // {type:'ficha'|'idosoForm'|'visitadorForm'|'visita', payload}
+  map: null,
+  markers: {},
+  routeSelection: new Set()
+};
+let unsubIdosos = null, unsubVisitadores = null;
+let lastReportText = null;
+
+const STATUS = {
+  green:  {label:'Visitado há < 2 semanas', color:getVar('--green')},
+  yellow: {label:'Visitado há 2–5 semanas', color:getVar('--yellow')},
+  red:    {label:'Sem visita há mais de 5 semanas', color:getVar('--red')}
+};
+function getVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'; }
+
+/* ============================= FIRESTORE (dados em tempo real) ============================= */
+function startListening(){
+  unsubIdosos = onSnapshot(collection(db,'idosos'), (snap)=>{
+    state.idosos = snap.docs.map(d=>d.data());
+    state.idososLoaded = true;
+    updateLoaded();
+  }, (err)=>{ showErrorBanner('Erro a ler idosos: ' + err.message); });
+
+  unsubVisitadores = onSnapshot(collection(db,'visitadores'), (snap)=>{
+    state.visitadores = snap.docs.map(d=>d.data());
+    state.visitadoresLoaded = true;
+    updateLoaded();
+  }, (err)=>{ showErrorBanner('Erro a ler visitadores: ' + err.message); });
+}
+function stopListening(){
+  if(unsubIdosos) unsubIdosos();
+  if(unsubVisitadores) unsubVisitadores();
+  unsubIdosos = unsubVisitadores = null;
+  state.idosos = []; state.visitadores = [];
+  state.idososLoaded = state.visitadoresLoaded = false;
+}
+function updateLoaded(){
+  state.loaded = state.idososLoaded && state.visitadoresLoaded;
+  render();
+}
+
+/* Se o Firestore não conseguir confirmar a escrita em 8 segundos (rede
+   bloqueada, sem ligação, etc.), a promessa normal do Firebase pode ficar
+   pendente indefinidamente sem erro nem sucesso. Este limite de tempo
+   garante que o utilizador é sempre avisado, em vez de o botão ficar
+   preso em "A guardar…" para sempre. */
+/* Testa a ligação direta ao Google, sem passar pelo SDK do Firebase — para
+   perceber se um bloqueio é à rede em geral ou específico do código da app. */
+async function testarLigacao(){
+  showErrorBanner('A testar ligação…');
+  const testes = [
+    {nome:'google.com (site geral)', url:'https://www.google.com/generate_204'},
+    {nome:'firestore.googleapis.com (servidor de dados)', url:'https://firestore.googleapis.com/'},
+    {nome:'identitytoolkit.googleapis.com (login)', url:'https://identitytoolkit.googleapis.com/'}
+  ];
+  const resultados = [];
+  for(const t of testes){
+    const inicio = Date.now();
+    try{
+      await Promise.race([
+        fetch(t.url, {mode:'no-cors', cache:'no-store'}),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('tempo esgotado')), 6000))
+      ]);
+      resultados.push(`✅ ${t.nome}: respondeu em ${Date.now()-inicio}ms`);
+    }catch(e){
+      resultados.push(`❌ ${t.nome}: ${e.message} (${Date.now()-inicio}ms)`);
+    }
+  }
+  showErrorBanner(resultados.join('  |  '));
+}
+
+function withTimeout(promise, ms, label){
+  let jaExpirou = false;
+  // Só mostra o resultado tardio se o tempo-limite já tiver disparado
+  // primeiro — evita mostrar esta mensagem em gravações normais e rápidas.
+  promise.then(
+    ()=>{ if(jaExpirou) showErrorBanner(`Guardado com sucesso (demorou mais do que o esperado — ${label}).`, 'success'); },
+    (err)=>{ if(jaExpirou) showErrorBanner(`[resposta tardia — ${label}] ${err && err.code ? err.code+': ' : ''}${err && err.message ? err.message : err}`); }
+  );
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=> setTimeout(()=>{
+      jaExpirou = true;
+      reject(new Error(`sem resposta do servidor em ${ms/1000}s — verifica a ligação à internet/rede (${label})`));
+    }, ms))
+  ]);
+}
+
+/* As escritas passam a ser feitas diretamente por pedidos HTTP (REST) em vez
+   de usar setDoc/updateDoc/deleteDoc do SDK, que ficam presos indefinidamente
+   nalguns dispositivos/navegadores (bug conhecido da biblioteca). As leituras
+   continuam a usar onSnapshot normalmente, que não tem este problema. */
+function toFirestoreValue(v){
+  if(v === null || v === undefined) return {nullValue: null};
+  if(typeof v === 'string') return {stringValue: v};
+  if(typeof v === 'number') return Number.isInteger(v) ? {integerValue: String(v)} : {doubleValue: v};
+  if(typeof v === 'boolean') return {booleanValue: v};
+  if(Array.isArray(v)) return {arrayValue: {values: v.map(toFirestoreValue)}};
+  if(typeof v === 'object') return {mapValue: {fields: toFirestoreFields(v)}};
+  return {stringValue: String(v)};
+}
+function toFirestoreFields(obj){
+  const fields = {};
+  for(const k in obj){ if(obj[k]!==undefined) fields[k] = toFirestoreValue(obj[k]); }
+  return fields;
+}
+async function restWriteDoc(collectionName, id, data){
+  const token = await auth.currentUser.getIdToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
+  const res = await withTimeout(fetch(url, {
+    method: 'PATCH',
+    headers: {'Authorization': 'Bearer '+token, 'Content-Type':'application/json'},
+    body: JSON.stringify({fields: toFirestoreFields(data)})
+  }), 8000, `guardar em ${collectionName}`);
+  if(!res.ok){
+    const errBody = await res.text().catch(()=>'');
+    throw new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
+  }
+}
+async function restDeleteDoc(collectionName, id){
+  const token = await auth.currentUser.getIdToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
+  const res = await withTimeout(fetch(url, {
+    method: 'DELETE',
+    headers: {'Authorization': 'Bearer '+token}
+  }), 8000, `eliminar de ${collectionName}`);
+  if(!res.ok){
+    const errBody = await res.text().catch(()=>'');
+    throw new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
+  }
+}
+
+async function idosoSave(id, data){
+  try{ await restWriteDoc('idosos', id, data); return true; }
+  catch(e){ showErrorBanner('Erro ao guardar idoso: ' + e.message); return false; }
+}
+async function idosoDelete(id){
+  try{ await restDeleteDoc('idosos', id); return true; }
+  catch(e){ showErrorBanner('Erro ao eliminar idoso: ' + e.message); return false; }
+}
+async function idosoRegistarVisita(id, visita){
+  try{
+    const i = findIdoso(id) || {};
+    const visitas = (i.visitas ? i.visitas.slice() : []);
+    visitas.push(visita);
+    await restWriteDoc('idosos', id, {...i, id, visitas, dataUltimaVisita: visita.dataHora});
+    return true;
+  }catch(e){ showErrorBanner('Erro ao registar visita: ' + e.message); return false; }
+}
+async function visitadorSave(id, data){
+  try{ await restWriteDoc('visitadores', id, data); return true; }
+  catch(e){ showErrorBanner('Erro ao guardar visitador: ' + e.message); return false; }
+}
+async function visitadorDelete(id){
+  try{ await restDeleteDoc('visitadores', id); return true; }
+  catch(e){ showErrorBanner('Erro ao eliminar visitador: ' + e.message); return false; }
+}
+
+/* ============================= HELPERS ============================= */
+function uid(prefix, list){
+  let max = 0;
+  list.forEach(x=>{
+    const n = parseInt((x.id||'').replace(/\D/g,''),10);
+    if(!isNaN(n) && n>max) max = n;
+  });
+  return prefix + '-' + String(max+1).padStart(3,'0');
+}
+function weeksSince(dateStr){
+  if(!dateStr) return Infinity;
+  const d = new Date(dateStr);
+  const now = new Date();
+  return (now - d) / (1000*60*60*24*7);
+}
+function statusFor(dateStr){
+  if(!dateStr) return 'red';
+  const w = weeksSince(dateStr);
+  if(w < 2) return 'green';
+  if(w <= 5) return 'yellow';
+  return 'red';
+}
+function fmtDate(dateStr){
+  if(!dateStr) return '—';
+  const d = new Date(dateStr);
+  if(isNaN(d)) return dateStr;
+  return d.toLocaleString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function fmtDateOnly(dateStr){
+  if(!dateStr) return '—';
+  const d = new Date(dateStr);
+  if(isNaN(d)) return dateStr;
+  return d.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+function esc(s){
+  return (s==null?'':String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function findIdoso(id){ return state.idosos.find(i=>i.id===id); }
+function findVisitador(id){ return state.visitadores.find(v=>v.id===id); }
+
+/* Pesquisa coordenadas a partir da morada (OpenStreetMap Nominatim) e
+   preenche os campos latitude/longitude do formulário sem perder o resto
+   do que já foi escrito. Também aceita vírgula como separador decimal. */
+function parseCoord(str){
+  if(!str) return null;
+  const n = parseFloat(String(str).trim().replace(',', '.'));
+  return isNaN(n) ? null : n;
+}
+function updateVerMapaLink(){
+  const form = document.getElementById('form-idoso');
+  const link = document.getElementById('link-ver-mapa');
+  if(!form || !link) return;
+  const lat = parseCoord(form.querySelector('[name=lat]').value);
+  const lng = parseCoord(form.querySelector('[name=lng]').value);
+  if(lat!=null && lng!=null){
+    link.href = `https://www.google.com/maps?q=${lat},${lng}`;
+    link.style.display = 'inline';
+  } else {
+    link.style.display = 'none';
+  }
+}
+async function geocodeMorada(){
+  const form = document.getElementById('form-idoso');
+  if(!form) return;
+  const morada = form.querySelector('[name=morada]').value.trim();
+  const status = document.getElementById('geocode-status');
+  if(!morada){ status.textContent = 'Escreve primeiro a morada completa.'; return; }
+  status.textContent = 'A procurar…';
+  try{
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(morada);
+    const res = await fetch(url, {headers:{'Accept':'application/json'}});
+    const data = await res.json();
+    if(!data || data.length===0){
+      status.textContent = 'Não foi encontrada essa morada — confirma o texto ou introduz as coordenadas manualmente.';
+      return;
+    }
+    form.querySelector('[name=lat]').value = parseFloat(data[0].lat).toFixed(6);
+    form.querySelector('[name=lng]').value = parseFloat(data[0].lon).toFixed(6);
+    status.innerHTML = 'Coordenadas encontradas — confirma no link "Ver no Google Maps" antes de guardar.';
+    updateVerMapaLink();
+  }catch(e){
+    status.textContent = 'Não foi possível pesquisar agora (precisa de ligação à internet). Podes introduzir as coordenadas manualmente.';
+  }
+}
+
+function ultimaVisitaInfo(idoso){
+  const hist = idoso.visitas || [];
+  if(hist.length===0) return {data:idoso.dataUltimaVisita||null, obs:idoso.obsUltimaVisita||''};
+  const last = hist[hist.length-1];
+  return {data:last.dataHora, obs:last.observacoes};
+}
+
+/* ============================= REPORT ============================= */
+function reportText(idoso, visita){
+  const visitadorNome = visita.visitadorId ? (findVisitador(visita.visitadorId)||{}).nome : (visita.visitadorNomeLivre||'—');
+  return `RELATÓRIO DE VISITA
+——————————————————
+Idoso: ${idoso.nome}
+ID: ${idoso.id}
+Data e hora da visita: ${fmtDate(visita.dataHora)}
+Visitador: ${visitadorNome || '—'}
+
+Observações:
+${visita.observacoes || '(sem observações)'}
+`;
+}
+function mailtoLink(idoso, visita){
+  const subject = encodeURIComponent(`Relatório de visita — ${idoso.nome} (${idoso.id})`);
+  const body = encodeURIComponent(reportText(idoso, visita));
+  return `mailto:?subject=${subject}&body=${body}`;
+}
+function whatsappLink(idoso, visita){
+  const text = encodeURIComponent(reportText(idoso, visita));
+  let phone = (idoso.pessoaProximaContacto || '').replace(/[^\d+]/g,'');
+  if(phone && !phone.startsWith('+')) phone = phone; // deixa como está, wa.me aceita sem +
+  return phone ? `https://wa.me/${phone.replace('+','')}?text=${text}` : `https://wa.me/?text=${text}`;
+}
+
+/* ============================= RENDER ROOT ============================= */
+function render(){
+  const app = document.getElementById('app');
+  if(NEEDS_SETUP){ app.innerHTML = renderSetupNeeded(); return; }
+  if(!state.user){ app.innerHTML = renderLogin(); attachLoginHandlers(); return; }
+  if(!state.loaded){
+    app.innerHTML = `<div style="padding:60px;text-align:center;color:var(--muted);width:100%;">A carregar dados…</div>`;
+    return;
+  }
+  app.innerHTML = `
+    ${renderSidebar()}
+    <main>${renderTab()}</main>
+  `;
+  if(state.modal) renderModal();      // insere o HTML da janela, se houver
+  attachGlobalHandlers();             // liga TODOS os botões, incluindo os da janela
+  if(state.activeTab==='mapa'){ wireRouteChecklist(); setTimeout(initMap, 30); }
+}
+
+function renderSetupNeeded(){
+  return `
+  <div class="setup-wrap">
+    <h2 class="display">Falta ligar ao Firebase</h2>
+    <p>Esta aplicação está pronta para usar uma conta Google Firebase (login + base de dados na nuvem), mas ainda não tem as chaves do teu projeto. Segue estes passos uma única vez:</p>
+    <ol>
+      <li>Vai a <code>console.firebase.google.com</code> e cria um projeto novo (gratuito).</li>
+      <li>No menu, abre <strong>Build → Authentication</strong>, clica em "Get started" e ativa o método <strong>Email/Password</strong>.</li>
+      <li>Ainda em Authentication → separador "Users", clica "Add user" e cria uma conta (e-mail + palavra-passe) para cada pessoa da equipa que deva ter acesso.</li>
+      <li>No menu, abre <strong>Build → Firestore Database</strong>, clica "Create database" e escolhe "Start in production mode".</li>
+      <li>No separador "Rules" do Firestore, substitui o conteúdo por:
+        <pre>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}</pre>
+        e clica "Publish".
+      </li>
+      <li>Volta a <strong>Definições do projeto</strong> (ícone de engrenagem) → "Geral" → em "As tuas apps" clica no ícone <code>&lt;/&gt;</code> para registar uma app Web, dá-lhe um nome e copia o objeto <code>firebaseConfig</code> que aparece.</li>
+      <li>Abre este ficheiro .html num editor de texto, procura por <code>COLOCA_AQUI</code> perto do início do script, e substitui pelos valores que copiaste.</li>
+      <li>Guarda o ficheiro e volta a abri-lo no navegador.</li>
+    </ol>
+    <p class="hint">Depois disto, qualquer pessoa da equipa consegue abrir este mesmo ficheiro no seu próprio computador, iniciar sessão com a conta que lhe deres, e ver os mesmos dados em tempo real.</p>
+  </div>`;
+}
+
+function renderLogin(){
+  return `
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="eyebrow">Rede de Apoio</div>
+      <h2>Iniciar sessão</h2>
+      <p class="hint">Usa a conta criada pelo administrador da equipa.</p>
+      <form id="form-login" novalidate>
+        <div class="field"><label>E-mail</label><input type="email" name="email" autocomplete="username"></div>
+        <div class="field"><label>Palavra-passe</label><input type="password" name="password" autocomplete="current-password"></div>
+        <p id="login-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
+        <button class="btn accent" type="submit" style="width:100%;">Entrar</button>
+      </form>
+    </div>
+  </div>`;
+}
+function attachLoginHandlers(){
+  const f = document.getElementById('form-login');
+  if(!f) return;
+  f.onsubmit = async (e)=>{
+    e.preventDefault();
+    const errEl = document.getElementById('login-error');
+    const fd = new FormData(f);
+    const email = (fd.get('email')||'').trim();
+    const password = fd.get('password')||'';
+    if(!email || !password){
+      errEl.textContent = 'Preenche o e-mail e a palavra-passe.';
+      errEl.style.display = 'block';
+      return;
+    }
+    const btn = f.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'A entrar…';
+    try{
+      await signInWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged trata do resto
+    }catch(err){
+      errEl.textContent = 'Não foi possível entrar — verifica o e-mail e a palavra-passe.';
+      errEl.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Entrar';
+    }
+  };
+}
+
+function renderSidebar(){
+  const tabs = [
+    {id:'idosos', label:'Idosos', count:state.idosos.length},
+    {id:'mapa', label:'Mapa'},
+    {id:'visitadores', label:'Visitadores', count:state.visitadores.length},
+    {id:'visita', label:'Registar visita'}
+  ];
+  return `
+  <div class="sidebar">
+    <div class="brand">
+      <div class="eyebrow">Rede de Apoio</div>
+      <h1>Visitas a<br>Idosos</h1>
+    </div>
+    <nav>
+      ${tabs.map(t=>`
+        <button class="tab-btn ${state.activeTab===t.id?'active':''}" data-tab="${t.id}">
+          ${t.label}${t.count!=null?`<span class="tab-count">${t.count}</span>`:''}
+        </button>`).join('')}
+    </nav>
+    <div class="sidebar-user">
+      <span class="email">${esc(state.user.email)}</span>
+      <button class="btn ghost sm" data-action="logout" style="width:100%;">Terminar sessão</button>
+      <button class="btn ghost sm" data-action="testar-ligacao" style="width:100%;margin-top:8px;">🔧 Testar ligação</button>
+    </div>
+  </div>`;
+}
+
+function renderTab(){
+  if(state.activeTab==='idosos') return renderIdososTab();
+  if(state.activeTab==='mapa') return renderMapaTab();
+  if(state.activeTab==='visitadores') return renderVisitadoresTab();
+  if(state.activeTab==='visita') return renderVisitaTab();
+  return '';
+}
+
+/* ============================= TAB: IDOSOS ============================= */
+function renderIdososTab(){
+  let list = state.idosos.map(i=>({...i, _status:statusFor(ultimaVisitaInfo(i).data), _weeks: weeksSince(ultimaVisitaInfo(i).data)}));
+  if(state.search.trim()){
+    const q = state.search.trim().toLowerCase();
+    list = list.filter(i=> i.nome.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.morada||'').toLowerCase().includes(q) || (i.idSiiopP||'').toLowerCase().includes(q));
+  }
+  list.sort((a,b)=> b._weeks - a._weeks);
+
+  return `
+    <div class="page-head">
+      <div>
+        <h2>Idosos</h2>
+        <p>Fichas de acompanhamento, ordenadas por urgência de visita.</p>
+      </div>
+      <button class="btn accent" data-action="new-idoso">+ Novo idoso</button>
+    </div>
+    <div class="toolbar">
+      <input type="text" id="search-idosos" placeholder="Procurar por nome, ID ou morada…" value="${esc(state.search)}">
+      <div class="legend" style="margin-left:8px;">
+        <span><span class="dot" style="background:${STATUS.green.color}"></span>&lt; 2 sem.</span>
+        <span><span class="dot" style="background:${STATUS.yellow.color}"></span>2–5 sem.</span>
+        <span><span class="dot" style="background:${STATUS.red.color}"></span>&gt; 5 sem.</span>
+      </div>
+    </div>
+    ${list.length===0 ? `<div class="empty">Nenhum idoso encontrado.<br>Clica em <strong>+ Novo idoso</strong> para começar a ficha.</div>` : `
+    <div class="idoso-list">
+      ${list.map(i=>`
+        <div class="idoso-row status-${i._status}" data-action="open-ficha" data-id="${i.id}">
+          <span class="stamp status-${i._status}"></span>
+          <span class="id mono">${esc(i.id)}</span>
+          <span class="nome">${esc(i.nome)}</span>
+          <span class="morada">${esc(i.morada||'—')}</span>
+          <span class="status-label status-${i._status}">${STATUS[i._status].label}</span>
+        </div>`).join('')}
+    </div>`}
+  `;
+}
+
+/* ============================= TAB: MAPA ============================= */
+function renderMapaTab(){
+  const comCoords = state.idosos.filter(i=>i.lat && i.lng).length;
+  return `
+    <div class="page-head">
+      <div>
+        <h2>Mapa</h2>
+        <p>${comCoords} de ${state.idosos.length} idosos com localização definida.</p>
+      </div>
+    </div>
+    <div class="legend">
+      <span><span class="dot" style="background:${STATUS.green.color}"></span>Visitado há menos de 2 semanas</span>
+      <span><span class="dot" style="background:${STATUS.yellow.color}"></span>Entre 2 e 5 semanas</span>
+      <span><span class="dot" style="background:${STATUS.red.color}"></span>Mais de 5 semanas</span>
+    </div>
+    <div id="map"></div>
+    ${comCoords===0 ? `<p class="hint" style="margin-top:10px;">Ainda não há coordenadas registadas. Edita uma ficha de idoso e adiciona latitude/longitude para o veres aqui.</p>` : `
+    <div class="card" style="margin-top:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+        <h3 style="margin:0;font-size:15px;">Planear trajeto de visitas</h3>
+        <div style="display:flex;gap:8px;">
+          <button class="btn ghost sm" type="button" data-action="select-atrasados">Selecionar vermelhos</button>
+          <button class="btn ghost sm" type="button" data-action="clear-route">Limpar seleção</button>
+        </div>
+      </div>
+      <p class="hint" style="margin:0 0 10px;">Escolhe quem visitar (já ordenado por urgência) e abre o trajeto pronto no Google Maps.</p>
+      <div id="route-list" style="max-height:280px;overflow-y:auto;">${routeListHTML()}</div>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:500;color:var(--ink);">
+          <input type="checkbox" id="optimize-route" checked style="width:auto;"> Otimizar ordem automaticamente
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:500;color:var(--ink);">
+          <input type="checkbox" id="use-my-location" style="width:auto;"> Partir da minha localização atual
+        </label>
+        <p class="hint" style="margin:0;">Sem esta opção, o Google Maps pergunta o ponto de partida quando abrires o trajeto — costuma ser mais fiável do que a localização calculada pelo computador.</p>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+        <button class="btn accent" id="btn-gerar-trajeto" type="button" data-action="gerar-trajeto" ${state.routeSelection.size===0?'disabled':''}>
+          Abrir trajeto no Google Maps (<span id="route-count">${state.routeSelection.size}</span>)
+        </button>
+      </div>
+    </div>`}
+  `;
+}
+function routeListHTML(){
+  const pts = state.idosos.filter(i=>i.lat && i.lng)
+    .map(i=>({...i, _weeks:weeksSince(ultimaVisitaInfo(i).data), _status:statusFor(ultimaVisitaInfo(i).data)}))
+    .sort((a,b)=>b._weeks-a._weeks);
+  if(pts.length===0) return `<p class="hint">Nenhum idoso com coordenadas definidas.</p>`;
+  return pts.map(i=>`
+    <label style="display:flex;align-items:center;gap:10px;padding:7px 4px;border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;">
+      <input type="checkbox" class="route-check" data-id="${esc(i.id)}" ${state.routeSelection.has(i.id)?'checked':''} style="width:auto;">
+      <span class="stamp status-${i._status}"></span>
+      <span style="flex:1;">${esc(i.nome)}</span>
+      <span style="color:var(--muted);font-size:12px;">${STATUS[i._status].label}</span>
+    </label>`).join('');
+}
+function wireRouteChecklist(){
+  document.querySelectorAll('.route-check').forEach(cb=>{
+    cb.onchange = ()=>{
+      const id = cb.dataset.id;
+      if(cb.checked) state.routeSelection.add(id); else state.routeSelection.delete(id);
+      updateRouteSummary();
+      updateMarkerHighlight(id, cb.checked);
+    };
+  });
+}
+function updateRouteSummary(){
+  const btn = document.getElementById('btn-gerar-trajeto');
+  const countEl = document.getElementById('route-count');
+  if(countEl) countEl.textContent = state.routeSelection.size;
+  if(btn) btn.disabled = state.routeSelection.size===0;
+}
+function buildMarkerIcon(color, selected){
+  return L.divIcon({
+    className:'',
+    html:`<div class="marker-pin" style="background:${color};${selected?'box-shadow:0 0 0 3px #1E2A32, 0 1px 4px rgba(0,0,0,0.4);':''}"></div>`,
+    iconSize:[22,22], iconAnchor:[11,20]
+  });
+}
+function updateMarkerHighlight(id, selected){
+  const m = state.markers[id];
+  const i = findIdoso(id);
+  if(!m || !i) return;
+  const st = statusFor(ultimaVisitaInfo(i).data);
+  m.setIcon(buildMarkerIcon(STATUS[st].color, selected));
+}
+function selecionarAtrasados(){
+  state.idosos.filter(i=>i.lat && i.lng && statusFor(ultimaVisitaInfo(i).data)==='red').forEach(i=>{
+    state.routeSelection.add(i.id);
+    const cb = document.querySelector(`.route-check[data-id="${CSS.escape(i.id)}"]`);
+    if(cb) cb.checked = true;
+    updateMarkerHighlight(i.id, true);
+  });
+  updateRouteSummary();
+}
+function limparRota(){
+  state.routeSelection.forEach(id=>updateMarkerHighlight(id, false));
+  state.routeSelection.clear();
+  document.querySelectorAll('.route-check').forEach(cb=>cb.checked=false);
+  updateRouteSummary();
+}
+function getUserLocation(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos=>resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
+      ()=>resolve(null),
+      {timeout:4000}
+    );
+  });
+}
+function buildMapsRouteUrl(points, origin, optimize){
+  const destination = points[points.length-1];
+  const waypointPts = points.slice(0,-1);
+  let waypoints = waypointPts.map(p=>`${p.lat},${p.lng}`).join('|');
+  if(optimize && waypoints) waypoints = 'optimize:true|' + waypoints;
+  const params = new URLSearchParams({api:'1', destination:`${destination.lat},${destination.lng}`, travelmode:'driving'});
+  if(origin) params.set('origin', `${origin.lat},${origin.lng}`);
+  if(waypoints) params.set('waypoints', waypoints);
+  return 'https://www.google.com/maps/dir/?' + params.toString();
+}
+async function gerarTrajeto(){
+  const points = Array.from(state.routeSelection)
+    .map(id=>findIdoso(id))
+    .filter(i=>i && i.lat && i.lng)
+    .map(i=>({lat:i.lat, lng:i.lng, _weeks:weeksSince(ultimaVisitaInfo(i).data)}))
+    .sort((a,b)=>b._weeks-a._weeks);
+  if(points.length===0){ showToast('Seleciona pelo menos um idoso com coordenadas.'); return; }
+  // Abre já o separador (dentro do gesto de clique) para não ser bloqueado
+  // como pop-up; preenchemos o endereço assim que soubermos a localização.
+  const newTab = window.open('', '_blank');
+  const optimizeEl = document.getElementById('optimize-route');
+  const optimize = optimizeEl ? optimizeEl.checked : true;
+  const useLocationEl = document.getElementById('use-my-location');
+  let origin, destPoints;
+  if(useLocationEl && useLocationEl.checked){
+    // Usa a localização do dispositivo como ponto de partida; todos os
+    // idosos selecionados entram na rota como paragens.
+    origin = await getUserLocation();
+    destPoints = points;
+  } else {
+    // Sem localização do dispositivo: usa o próprio idoso mais urgente como
+    // ponto de partida, para o Google Maps não adivinhar uma localização
+    // aproximada e imprecisa (ex: a do fornecedor de internet).
+    origin = points[0];
+    destPoints = points.slice(1);
+    if(destPoints.length===0) destPoints = points; // só havia 1 selecionado
+  }
+  const url = buildMapsRouteUrl(destPoints, origin, optimize);
+  if(newTab) newTab.location.href = url;
+  else window.open(url, '_blank', 'noopener');
+}
+
+function initMap(){
+  const el = document.getElementById('map');
+  if(!el || typeof L==='undefined') return;
+  const pts = state.idosos.filter(i=>i.lat && i.lng);
+
+  // O separador é recriado do zero em cada render, por isso o contentor #map
+  // de uma instância anterior do Leaflet deixa de existir. Reutilizar essa
+  // instância "morta" bloqueia cliques no resto da página — por isso
+  // destruímos sempre a instância anterior e criamos uma nova, limpa.
+  if(state.map){
+    try{ state.map.remove(); }catch(e){}
+    state.map = null;
+  }
+  state.markers = {};
+  try{
+    state.map = L.map('map', {scrollWheelZoom:true});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(state.map);
+  }catch(e){
+    el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--muted);">Não foi possível carregar o mapa. Verifica a ligação à internet e tenta novamente.</div>';
+    return;
+  }
+
+  setTimeout(()=>{ if(state.map) state.map.invalidateSize(); }, 60);
+
+  // Liga os botões que aparecem dentro dos popups (são criados pelo Leaflet
+  // fora do fluxo normal de render(), por isso precisam de ligação própria
+  // sempre que um popup abre).
+  state.map.on('popupopen', (e)=>{
+    const node = e.popup.getElement();
+    const btnVisita = node.querySelector('[data-popup-visita]');
+    if(btnVisita){
+      btnVisita.onclick = ()=>{
+        const idosoId = btnVisita.dataset.popupVisita;
+        state.modal = null;
+        state.activeTab = 'visita';
+        render();
+        setTimeout(()=>{
+          const sel = document.querySelector('#form-visita [name=idosoId]');
+          if(sel) sel.value = idosoId;
+        }, 0);
+      };
+    }
+    const btnFicha = node.querySelector('[data-popup-ficha]');
+    if(btnFicha){
+      btnFicha.onclick = ()=>{
+        state.modal = {type:'ficha', payload: btnFicha.dataset.popupFicha};
+        render();
+      };
+    }
+  });
+
+  if(pts.length===0){
+    state.map.setView([39.5, -8.0], 6.3);
+    return;
+  }
+  const bounds = [];
+  pts.forEach(i=>{
+    const st = statusFor(ultimaVisitaInfo(i).data);
+    const icon = buildMarkerIcon(STATUS[st].color, state.routeSelection.has(i.id));
+    const m = L.marker([i.lat, i.lng], {icon}).addTo(state.map);
+    const info = ultimaVisitaInfo(i);
+    m.bindPopup(`
+      <div class="popup-name">${esc(i.nome)}</div>
+      <div class="popup-row mono">${esc(i.id)}</div>
+      <div class="popup-row">Última visita: ${fmtDate(info.data)}</div>
+      <div class="popup-row"><strong>${esc(STATUS[st].label)}</strong></div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button class="btn accent sm" data-popup-visita="${esc(i.id)}">Registar visita</button>
+        <button class="btn ghost sm" data-popup-ficha="${esc(i.id)}">Ver ficha</button>
+      </div>
+    `);
+    state.markers[i.id] = m;
+    bounds.push([i.lat, i.lng]);
+  });
+  state.map.fitBounds(bounds, {padding:[36,36], maxZoom:15});
+}
+
+/* ============================= TAB: VISITADORES ============================= */
+function renderVisitadoresTab(){
+  return `
+    <div class="page-head">
+      <div>
+        <h2>Visitadores</h2>
+        <p>Equipa que realiza as visitas domiciliárias.</p>
+      </div>
+      <button class="btn accent" data-action="new-visitador">+ Novo visitador</button>
+    </div>
+    ${state.visitadores.length===0 ? `<div class="empty">Ainda não há visitadores registados.</div>` : `
+    <table>
+      <thead><tr><th>Nome</th><th>Nº Mecanográfico</th><th>Posto</th><th></th></tr></thead>
+      <tbody>
+        ${state.visitadores.map(v=>`
+          <tr>
+            <td>${esc(v.nome)}</td>
+            <td class="mono">${esc(v.numeroMecanografico)}</td>
+            <td>${esc(v.posto)}</td>
+            <td class="actions">
+              <button class="btn ghost sm" data-action="edit-visitador" data-id="${v.id}">Editar</button>
+              <button class="btn danger sm" data-action="delete-visitador" data-id="${v.id}">Remover</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`}
+  `;
+}
+
+/* ============================= TAB: REGISTAR VISITA ============================= */
+function renderVisitaTab(prefillId){
+  if(state.idosos.length===0){
+    return `<div class="page-head"><div><h2>Registar visita</h2></div></div>
+    <div class="empty">Precisas de criar pelo menos um idoso antes de registar uma visita.</div>`;
+  }
+  const now = new Date();
+  const nowLocal = new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  return `
+    <div class="page-head"><div><h2>Registar visita</h2><p>A observação fica guardada na ficha do idoso e gera um relatório para enviar.</p></div></div>
+    <div class="card" style="max-width:520px;">
+      <form id="form-visita" novalidate>
+        <div class="field">
+          <label>Idoso *</label>
+          <select name="idosoId">
+            <option value="">Selecionar…</option>
+            ${state.idosos.map(i=>`<option value="${i.id}" ${prefillId===i.id?'selected':''}>${esc(i.nome)} (${esc(i.id)})</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Visitador</label>
+          <select name="visitadorId">
+            <option value="">Selecionar…</option>
+            ${state.visitadores.map(v=>`<option value="${v.id}">${esc(v.nome)} — ${esc(v.posto)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label>Data e hora da visita *</label>
+          <input type="datetime-local" name="dataHora" value="${nowLocal}">
+        </div>
+        <div class="field">
+          <label>Observações *</label>
+          <textarea name="observacoes" rows="4" placeholder="Estado geral, necessidades identificadas, encaminhamentos…"></textarea>
+        </div>
+        <p id="form-visita-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
+        <button class="btn accent" type="submit">Guardar visita e gerar relatório</button>
+      </form>
+    </div>
+  `;
+}
+
+/* ============================= MODAL: FICHA ============================= */
+function renderModal(){
+  const {type, payload} = state.modal;
+  let inner = '';
+  if(type==='ficha') inner = fichaHTML(payload);
+  if(type==='idosoForm') inner = idosoFormHTML(payload);
+  if(type==='visitadorForm') inner = visitadorFormHTML(payload);
+  if(type==='reportPreview') inner = reportPreviewHTML(payload);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'overlay';
+  wrap.id = 'overlay';
+  wrap.innerHTML = `<div class="modal">${inner}</div>`;
+  document.getElementById('app').appendChild(wrap);
+  wrap.addEventListener('click', e=>{ if(e.target.id==='overlay') closeModal(); });
+  attachModalHandlers();
+}
+function closeModal(){ state.modal=null; render(); }
+
+function fichaHTML(id){
+  const i = findIdoso(id);
+  if(!i) return `<p>Idoso não encontrado.</p>`;
+  const info = ultimaVisitaInfo(i);
+  const st = statusFor(info.data);
+  const hist = (i.visitas||[]).slice().reverse();
+  return `
+    <div class="modal-head">
+      <div>
+        <span class="mono" style="font-size:12px;color:var(--muted);">${esc(i.id)}</span>
+        <h2>${esc(i.nome)}</h2>
+        <span class="status-pill status-${st}"><span class="stamp status-${st}"></span>${STATUS[st].label}</span>
+      </div>
+      <button class="close-x" data-action="close-modal">✕</button>
+    </div>
+    <div class="ficha-meta">
+      <div><div class="k">ID SIIOP-P</div><div class="v">${esc(i.idSiiopP||'—')}</div></div>
+      <div><div class="k">Morada</div><div class="v">${esc(i.morada||'—')}</div></div>
+      <div><div class="k">Contacto</div><div class="v">${esc(i.contacto||'—')}</div></div>
+      <div><div class="k">Pessoa próxima</div><div class="v">${esc(i.pessoaProximaNome||'—')}</div></div>
+      <div><div class="k">Contacto da pessoa próxima</div><div class="v">${esc(i.pessoaProximaContacto||'—')}</div></div>
+    </div>
+    <hr class="div">
+    <h3 style="font-size:15px;margin:0 0 10px;">Histórico de visitas</h3>
+    ${hist.length===0 ? `<p class="hint">Ainda sem visitas registadas.</p>` : hist.map(v=>`
+      <div class="hist-item">
+        <div class="date">${fmtDate(v.dataHora)}</div>
+        <div class="who">${v.visitadorId ? esc((findVisitador(v.visitadorId)||{}).nome||'—') : '—'}</div>
+        <div class="obs">${esc(v.observacoes)}</div>
+        <div style="margin-top:6px;">
+          <button class="btn ghost sm" data-action="preview-report" data-id="${esc(i.id)}" data-vidx="${(i.visitas||[]).indexOf(v)}">Ver relatório</button>
+        </div>
+      </div>`).join('')}
+    <div class="modal-actions">
+      <button class="btn accent" data-action="go-visita" data-id="${esc(i.id)}">Registar visita</button>
+      <button class="btn ghost" data-action="edit-idoso" data-id="${esc(i.id)}">Editar ficha</button>
+      <button class="btn danger" data-action="delete-idoso" data-id="${esc(i.id)}">Eliminar</button>
+    </div>
+  `;
+}
+
+function idosoFormHTML(id){
+  const editing = !!id;
+  const i = editing ? findIdoso(id) : {};
+  return `
+    <div class="modal-head">
+      <h2>${editing?'Editar idoso':'Novo idoso'}</h2>
+      <button class="close-x" data-action="close-modal">✕</button>
+    </div>
+    <form id="form-idoso" data-id="${editing?esc(id):''}" novalidate>
+      <div class="field"><label>Nome completo *</label><input name="nome" value="${esc(i.nome)}"></div>
+      <div class="field"><label>ID SIIOP-P</label><input name="idSiiopP" value="${esc(i.idSiiopP)}"></div>
+      <div class="field"><label>Morada completa *</label><input name="morada" value="${esc(i.morada)}"></div>
+      <div class="field"><label>Contacto</label><input name="contacto" value="${esc(i.contacto)}"></div>
+      <div class="field-row">
+        <div class="field"><label>Latitude</label><input name="lat" value="${i.lat!=null?i.lat:''}" placeholder="41.1579"></div>
+        <div class="field"><label>Longitude</label><input name="lng" value="${i.lng!=null?i.lng:''}" placeholder="-8.6291"></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin:-6px 0 10px;flex-wrap:wrap;">
+        <button type="button" class="btn ghost sm" data-action="geocode-morada">📍 Obter coordenadas pela morada</button>
+        <a href="#" id="link-ver-mapa" target="_blank" rel="noopener" style="font-size:12.5px;display:none;">Ver no Google Maps ↗</a>
+      </div>
+      <p id="geocode-status" class="hint" style="margin-top:-6px;margin-bottom:14px;"></p>
+      <hr class="div">
+      <div class="field"><label>Nome da pessoa próxima</label><input name="pessoaProximaNome" value="${esc(i.pessoaProximaNome)}"></div>
+      <div class="field"><label>Contacto da pessoa próxima</label><input name="pessoaProximaContacto" value="${esc(i.pessoaProximaContacto)}" placeholder="Nº WhatsApp com indicativo, ex: +351912345678"></div>
+      <p id="form-idoso-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
+      <div class="modal-actions">
+        <button class="btn accent" type="submit">Guardar</button>
+        <button class="btn ghost" type="button" data-action="close-modal">Cancelar</button>
+      </div>
+    </form>
+  `;
+}
+
+function visitadorFormHTML(id){
+  const editing = !!id;
+  const v = editing ? findVisitador(id) : {};
+  return `
+    <div class="modal-head">
+      <h2>${editing?'Editar visitador':'Novo visitador'}</h2>
+      <button class="close-x" data-action="close-modal">✕</button>
+    </div>
+    <form id="form-visitador" data-id="${editing?esc(id):''}" novalidate>
+      <div class="field"><label>Nome *</label><input name="nome" value="${esc(v.nome)}"></div>
+      <div class="field"><label>Número mecanográfico *</label><input name="numeroMecanografico" value="${esc(v.numeroMecanografico)}"></div>
+      <div class="field"><label>Posto *</label><input name="posto" value="${esc(v.posto)}"></div>
+      <p id="form-visitador-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
+      <div class="modal-actions">
+        <button class="btn accent" type="submit">Guardar</button>
+        <button class="btn ghost" type="button" data-action="close-modal">Cancelar</button>
+      </div>
+    </form>
+  `;
+}
+
+function reportPreviewHTML(payload){
+  const {idosoId, vidx, idoso, visita} = payload;
+  const i = idoso || findIdoso(idosoId);
+  const v = visita || (i && (i.visitas||[])[vidx]);
+  if(!i || !v){
+    return `
+      <div class="modal-head"><h2>Relatório da visita</h2><button class="close-x" data-action="close-modal">✕</button></div>
+      <p class="hint">A atualizar os dados da visita… fecha e volta a abrir a partir da ficha do idoso dentro de instantes.</p>`;
+  }
+  const text = reportText(i, v);
+  lastReportText = text;
+  return `
+    <div class="modal-head">
+      <h2>Relatório da visita</h2>
+      <button class="close-x" data-action="close-modal">✕</button>
+    </div>
+    <div class="report-box">${esc(text)}</div>
+    <div class="modal-actions">
+      <a class="btn accent" href="${mailtoLink(i,v)}" target="_blank" rel="noopener">Enviar por e-mail</a>
+      <a class="btn ghost" href="${whatsappLink(i,v)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>
+      <button class="btn ghost" type="button" data-action="copy-report">Copiar texto</button>
+    </div>
+  `;
+}
+
+/* ============================= HANDLERS ============================= */
+function attachGlobalHandlers(){
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    b.onclick = ()=>{
+      if(state.activeTab==='mapa' && b.dataset.tab!=='mapa' && state.map){
+        try{ state.map.remove(); }catch(e){}
+        state.map = null;
+      }
+      state.activeTab = b.dataset.tab; state.modal=null; render();
+    };
+  });
+  const search = document.getElementById('search-idosos');
+  if(search){
+    search.oninput = ()=>{ state.search = search.value; render(); setTimeout(()=>{ const s=document.getElementById('search-idosos'); if(s){ s.focus(); s.selectionStart=s.selectionEnd=s.value.length; } },0); };
+  }
+  document.querySelectorAll('[data-action]').forEach(el=>{
+    const action = el.dataset.action;
+    if(el.tagName==='A') return; // links handled natively (mailto/whatsapp)
+    el.onclick = (e)=>{
+      const id = el.dataset.id;
+      if(action==='new-idoso'){ state.modal={type:'idosoForm', payload:null}; render(); }
+      else if(action==='open-ficha'){ state.modal={type:'ficha', payload:id}; render(); }
+      else if(action==='edit-idoso'){ state.modal={type:'idosoForm', payload:id}; render(); }
+      else if(action==='delete-idoso'){
+        if(confirm('Eliminar esta ficha de idoso? Esta ação não pode ser desfeita.')){
+          state.modal=null; render();
+          idosoDelete(id).then(ok=>{ if(ok) showToast('Idoso eliminado.'); });
+        }
+      }
+      else if(action==='new-visitador'){ state.modal={type:'visitadorForm', payload:null}; render(); }
+      else if(action==='edit-visitador'){ state.modal={type:'visitadorForm', payload:id}; render(); }
+      else if(action==='delete-visitador'){
+        if(confirm('Remover este visitador?')){
+          visitadorDelete(id).then(ok=>{ if(ok) showToast('Visitador removido.'); });
+        }
+      }
+      else if(action==='go-visita'){ state.modal=null; state.activeTab='visita'; render(); setTimeout(()=>{
+          const sel = document.querySelector('#form-visita [name=idosoId]'); if(sel) sel.value = id;
+        },0); }
+      else if(action==='preview-report'){ state.modal={type:'reportPreview', payload:{idosoId:id, vidx:parseInt(el.dataset.vidx,10)}}; render(); }
+      else if(action==='copy-report'){
+        if(lastReportText) navigator.clipboard.writeText(lastReportText).then(()=>showToast('Relatório copiado.'));
+      }
+      else if(action==='close-modal'){ closeModal(); }
+      else if(action==='geocode-morada'){ geocodeMorada(); }
+      else if(action==='logout'){ signOut(auth); }
+      else if(action==='testar-ligacao'){ testarLigacao(); }
+      else if(action==='select-atrasados'){ selecionarAtrasados(); }
+      else if(action==='clear-route'){ limparRota(); }
+      else if(action==='gerar-trajeto'){ gerarTrajeto(); }
+    };
+  });
+
+  const vf = document.getElementById('form-visita');
+  if(vf){
+    vf.onsubmit = async (e)=>{
+      e.preventDefault();
+      const errEl = document.getElementById('form-visita-error');
+      const fd = new FormData(vf);
+      const idosoId = fd.get('idosoId');
+      const dataHora = fd.get('dataHora');
+      const observacoes = (fd.get('observacoes')||'').trim();
+      const i = findIdoso(idosoId);
+      if(!i || !dataHora || !observacoes){
+        errEl.textContent = 'Seleciona o idoso, a data/hora e escreve uma observação.';
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      const visita = {
+        dataHora: new Date(dataHora).toISOString(),
+        visitadorId: fd.get('visitadorId') || null,
+        observacoes
+      };
+      const btn = vf.querySelector('button[type=submit]');
+      try{
+        btn.disabled = true; btn.textContent = 'A guardar…';
+        const ok = await idosoRegistarVisita(i.id, visita);
+        if(ok) showToast('Visita registada.');
+        state.modal = {type:'reportPreview', payload:{idoso:i, visita}};
+        render();
+      }catch(err){
+        showErrorBanner('Erro ao registar visita: ' + err.message);
+      }
+    };
+  }
+}
+
+function attachModalHandlers(){
+  const idosoForm = document.getElementById('form-idoso');
+  if(idosoForm){
+    idosoForm.querySelector('[name=lat]').oninput = updateVerMapaLink;
+    idosoForm.querySelector('[name=lng]').oninput = updateVerMapaLink;
+    updateVerMapaLink();
+    idosoForm.onsubmit = async (e)=>{
+      e.preventDefault();
+      const errEl = document.getElementById('form-idoso-error');
+      const fd = new FormData(idosoForm);
+      const nome = (fd.get('nome')||'').trim();
+      const morada = (fd.get('morada')||'').trim();
+      if(!nome || !morada){
+        errEl.textContent = 'Preenche pelo menos o nome e a morada.';
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      const editId = idosoForm.dataset.id;
+      const id = editId || uid('ID', state.idosos);
+      const existing = editId ? findIdoso(editId) : null;
+      const data = {
+        id,
+        nome,
+        idSiiopP: (fd.get('idSiiopP')||'').trim(),
+        morada,
+        contacto: (fd.get('contacto')||'').trim(),
+        lat: parseCoord(fd.get('lat')),
+        lng: parseCoord(fd.get('lng')),
+        pessoaProximaNome: (fd.get('pessoaProximaNome')||'').trim(),
+        pessoaProximaContacto: (fd.get('pessoaProximaContacto')||'').trim(),
+        visitas: existing ? (existing.visitas||[]) : [],
+        dataUltimaVisita: existing ? (existing.dataUltimaVisita||null) : null
+      };
+      const btn = idosoForm.querySelector('button[type=submit]');
+      try{
+        btn.disabled = true; btn.textContent = 'A guardar…';
+        const ok = await idosoSave(id, data);
+        state.modal=null; render();
+        if(ok) showToast('Ficha guardada.');
+      }catch(err){
+        showErrorBanner('Erro ao guardar idoso: ' + err.message);
+        state.modal=null; render();
+      }
+    };
+  }
+  const visitadorForm = document.getElementById('form-visitador');
+  if(visitadorForm){
+    visitadorForm.onsubmit = async (e)=>{
+      e.preventDefault();
+      const errEl = document.getElementById('form-visitador-error');
+      const fd = new FormData(visitadorForm);
+      const nome = (fd.get('nome')||'').trim();
+      const numeroMecanografico = (fd.get('numeroMecanografico')||'').trim();
+      const posto = (fd.get('posto')||'').trim();
+      if(!nome || !numeroMecanografico || !posto){
+        errEl.textContent = 'Preenche todos os campos.';
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      const editId = visitadorForm.dataset.id;
+      const id = editId || uid('V', state.visitadores);
+      const data = {id, nome, numeroMecanografico, posto};
+      const btn = visitadorForm.querySelector('button[type=submit]');
+      try{
+        btn.disabled = true; btn.textContent = 'A guardar…';
+        const ok = await visitadorSave(id, data);
+        state.modal=null; render();
+        if(ok) showToast('Visitador guardado.');
+      }catch(err){
+        showErrorBanner('Erro ao guardar visitador: ' + err.message);
+        state.modal=null; render();
+      }
+    };
+  }
+}
+
+/* ============================= ARRANQUE ============================= */
+if(!NEEDS_SETUP){
+  onAuthStateChanged(auth, (user)=>{
+    state.user = user;
+    if(user){
+      startListening();
+    } else {
+      stopListening();
+    }
+    render();
+  });
+} else {
+  render();
+}
+</script>
+</body>
+</html>

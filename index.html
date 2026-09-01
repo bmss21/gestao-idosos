@@ -396,6 +396,31 @@ function updateLoaded(){
    pendente indefinidamente sem erro nem sucesso. Este limite de tempo
    garante que o utilizador é sempre avisado, em vez de o botão ficar
    preso em "A guardar…" para sempre. */
+/* Testa a ligação direta ao Google, sem passar pelo SDK do Firebase — para
+   perceber se um bloqueio é à rede em geral ou específico do código da app. */
+async function testarLigacao(){
+  showErrorBanner('A testar ligação…');
+  const testes = [
+    {nome:'google.com (site geral)', url:'https://www.google.com/generate_204'},
+    {nome:'firestore.googleapis.com (servidor de dados)', url:'https://firestore.googleapis.com/'},
+    {nome:'identitytoolkit.googleapis.com (login)', url:'https://identitytoolkit.googleapis.com/'}
+  ];
+  const resultados = [];
+  for(const t of testes){
+    const inicio = Date.now();
+    try{
+      await Promise.race([
+        fetch(t.url, {mode:'no-cors', cache:'no-store'}),
+        new Promise((_,reject)=>setTimeout(()=>reject(new Error('tempo esgotado')), 6000))
+      ]);
+      resultados.push(`✅ ${t.nome}: respondeu em ${Date.now()-inicio}ms`);
+    }catch(e){
+      resultados.push(`❌ ${t.nome}: ${e.message} (${Date.now()-inicio}ms)`);
+    }
+  }
+  showErrorBanner(resultados.join('  |  '));
+}
+
 function withTimeout(promise, ms, label){
   // Regista o resultado REAL assim que chegar, mesmo que demore mais do que
   // o tempo-limite abaixo — sem isto, o erro verdadeiro do Firebase fica
@@ -675,6 +700,7 @@ function renderSidebar(){
     <div class="sidebar-user">
       <span class="email">${esc(state.user.email)}</span>
       <button class="btn ghost sm" data-action="logout" style="width:100%;">Terminar sessão</button>
+      <button class="btn ghost sm" data-action="testar-ligacao" style="width:100%;margin-top:8px;">🔧 Testar ligação</button>
     </div>
   </div>`;
 }
@@ -1201,6 +1227,7 @@ function attachGlobalHandlers(){
       else if(action==='close-modal'){ closeModal(); }
       else if(action==='geocode-morada'){ geocodeMorada(); }
       else if(action==='logout'){ signOut(auth); }
+      else if(action==='testar-ligacao'){ testarLigacao(); }
       else if(action==='select-atrasados'){ selecionarAtrasados(); }
       else if(action==='clear-route'){ limparRota(); }
       else if(action==='gerar-trajeto'){ gerarTrajeto(); }

@@ -1071,8 +1071,9 @@ function initMap(){
       <div class="popup-row mono">${esc(i.id)}</div>
       <div class="popup-row">Última visita: ${fmtDate(info.data)}</div>
       <div class="popup-row"><strong>${esc(STATUS[st].label)}</strong></div>
-      <div style="display:flex;gap:6px;margin-top:8px;">
-        <button class="btn accent sm" data-popup-visita="${esc(i.id)}">Registar visita</button>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <a class="btn accent sm" href="https://www.google.com/maps/dir/?api=1&destination=${i.lat},${i.lng}&travelmode=driving" target="_blank" rel="noopener">🧭 Navegar até aqui</a>
+        <button class="btn ghost sm" data-popup-visita="${esc(i.id)}">Registar visita</button>
         <button class="btn ghost sm" data-popup-ficha="${esc(i.id)}">Ver ficha</button>
       </div>
     `);

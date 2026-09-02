@@ -68,6 +68,9 @@
   nav{display:flex;flex-direction:column;margin-top:8px;}
   .tab-btn{
     position:relative;
+    display:flex;
+    align-items:center;
+    gap:10px;
     text-align:left;
     background:none;
     border:none;
@@ -75,11 +78,13 @@
     font-family:'Inter',sans-serif;
     font-size:14.5px;
     font-weight:500;
-    padding:13px 20px 13px 24px;
+    padding:11px 20px 11px 24px;
     cursor:pointer;
     border-left:3px solid transparent;
     transition:background .15s, color .15s;
   }
+  .tab-icon{font-size:17px;line-height:1;flex-shrink:0;}
+  .tab-label{flex:1;}
   .tab-btn:hover{background:rgba(255,255,255,0.05);color:#fff;}
   .tab-btn.active{
     background:var(--paper);
@@ -90,10 +95,10 @@
     margin-right:0;
   }
   .tab-count{
-    float:right;
     font-family:'IBM Plex Mono',monospace;
     font-size:11px;
     opacity:0.7;
+    flex-shrink:0;
   }
   .sidebar-foot{
     margin-top:auto;
@@ -112,7 +117,7 @@
   button{font-family:'Inter',sans-serif;cursor:pointer;}
   .btn{
     background:var(--ink);color:#fff;border:none;border-radius:6px;
-    padding:10px 18px;font-size:14px;font-weight:600;
+    padding:8px 15px;font-size:13px;font-weight:600;
   }
   .btn:hover{background:#0f171c;}
   .btn.accent{background:var(--accent);}
@@ -121,7 +126,7 @@
   .btn.ghost:hover{background:#fff;}
   .btn.danger{background:transparent;color:var(--red);border:1px solid var(--red);}
   .btn.danger:hover{background:var(--red-tint);}
-  .btn.sm{padding:6px 12px;font-size:12.5px;border-radius:5px;}
+  .btn.sm{padding:5px 10px;font-size:11.5px;border-radius:5px;}
   .btn:disabled{opacity:0.45;cursor:not-allowed;}
 
   input,select,textarea{
@@ -631,7 +636,7 @@ function reportText(idoso, visita){
 Idoso: ${idoso.nome}
 ID: ${idoso.id}
 Data e hora da visita: ${fmtDate(visita.dataHora)}
-Visitador: ${visitadorNome || '—'}
+Militar do SPC: ${visitadorNome || '—'}
 
 Observações:
 ${visita.observacoes || '(sem observações)'}
@@ -741,10 +746,10 @@ function attachLoginHandlers(){
 
 function renderSidebar(){
   const tabs = [
-    {id:'idosos', label:'Idosos', count:state.idosos.length},
-    {id:'mapa', label:'Mapa'},
-    {id:'visitadores', label:'Visitadores', count:state.visitadores.length},
-    {id:'visita', label:'Registar visita'}
+    {id:'idosos', label:'Idosos', icon:'🧓', count:state.idosos.length},
+    {id:'mapa', label:'Mapa', icon:'🗺️'},
+    {id:'visita', label:'Nova visita', icon:'📝'},
+    {id:'visitadores', label:'Militares do SPC', icon:'🎖️', count:state.visitadores.length}
   ];
   return `
   <div class="sidebar">
@@ -755,7 +760,9 @@ function renderSidebar(){
     <nav>
       ${tabs.map(t=>`
         <button class="tab-btn ${state.activeTab===t.id?'active':''}" data-tab="${t.id}">
-          ${t.label}${t.count!=null?`<span class="tab-count">${t.count}</span>`:''}
+          <span class="tab-icon">${t.icon}</span>
+          <span class="tab-label">${t.label}</span>
+          ${t.count!=null?`<span class="tab-count">${t.count}</span>`:''}
         </button>`).join('')}
     </nav>
     <div class="sidebar-user">
@@ -831,7 +838,10 @@ function renderMapaTab(){
       <span><span class="dot" style="background:${STATUS.yellow.color}"></span>Entre 2 e 5 semanas</span>
       <span><span class="dot" style="background:${STATUS.red.color}"></span>Mais de 5 semanas</span>
     </div>
-    <div id="map"></div>
+    <div style="position:relative;">
+      <div id="map"></div>
+      <button type="button" class="btn ghost sm" data-action="localizar-me" title="Mostrar a minha localização" style="position:absolute;bottom:14px;right:14px;z-index:400;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.25);">📍 A minha localização</button>
+    </div>
     ${comCoords===0 ? `<p class="hint" style="margin-top:10px;">Ainda não há coordenadas registadas. Edita uma ficha de idoso e adiciona latitude/longitude para o veres aqui.</p>` : `
     <div class="card" style="margin-top:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
@@ -927,6 +937,22 @@ function getUserLocation(){
       {timeout:4000}
     );
   });
+}
+let marcadorMinhaLocalizacao = null;
+async function localizarMe(){
+  if(!state.map){ showToast('O mapa ainda não está pronto.'); return; }
+  showToast('A localizar…');
+  const loc = await getUserLocation();
+  if(!loc){ showToast('Não foi possível obter a tua localização — verifica as permissões do navegador.'); return; }
+  if(marcadorMinhaLocalizacao){ state.map.removeLayer(marcadorMinhaLocalizacao); }
+  const icon = L.divIcon({
+    className:'',
+    html:`<div style="width:16px;height:16px;border-radius:50%;background:#2563EB;border:3px solid #fff;box-shadow:0 0 0 2px #2563EB, 0 1px 4px rgba(0,0,0,0.4);"></div>`,
+    iconSize:[16,16], iconAnchor:[8,8]
+  });
+  marcadorMinhaLocalizacao = L.marker([loc.lat, loc.lng], {icon, zIndexOffset:1000}).addTo(state.map);
+  marcadorMinhaLocalizacao.bindPopup('A tua localização').openPopup();
+  state.map.setView([loc.lat, loc.lng], 15);
 }
 function buildMapsRouteUrl(points, origin, optimize){
   const destination = points[points.length-1];
@@ -1055,12 +1081,12 @@ function renderVisitadoresTab(){
   return `
     <div class="page-head">
       <div>
-        <h2>Visitadores</h2>
+        <h2>Militares do SPC</h2>
         <p>Equipa que realiza as visitas domiciliárias.</p>
       </div>
-      <button class="btn accent" data-action="new-visitador">+ Novo visitador</button>
+      <button class="btn accent" data-action="new-visitador">+ Novo militar</button>
     </div>
-    ${state.visitadores.length===0 ? `<div class="empty">Ainda não há visitadores registados.</div>` : `
+    ${state.visitadores.length===0 ? `<div class="empty">Ainda não há militares registados.</div>` : `
     <table>
       <thead><tr><th>Nome</th><th>Nº Mecanográfico</th><th>Posto</th><th></th></tr></thead>
       <tbody>
@@ -1099,7 +1125,7 @@ function renderVisitaTab(prefillId){
           </select>
         </div>
         <div class="field">
-          <label>Visitador</label>
+          <label>Militar do SPC</label>
           <select name="visitadorId">
             <option value="">Selecionar…</option>
             ${state.visitadores.map(v=>`<option value="${v.id}">${esc(v.nome)} — ${esc(v.posto)}</option>`).join('')}
@@ -1220,7 +1246,7 @@ function visitadorFormHTML(id){
   const v = editing ? findVisitador(id) : {};
   return `
     <div class="modal-head">
-      <h2>${editing?'Editar visitador':'Novo visitador'}</h2>
+      <h2>${editing?'Editar militar':'Novo militar do SPC'}</h2>
       <button class="close-x" data-action="close-modal">✕</button>
     </div>
     <form id="form-visitador" data-id="${editing?esc(id):''}" novalidate>
@@ -1404,7 +1430,7 @@ function attachGlobalHandlers(){
       else if(action==='new-visitador'){ state.modal={type:'visitadorForm', payload:null}; render(); }
       else if(action==='edit-visitador'){ state.modal={type:'visitadorForm', payload:id}; render(); }
       else if(action==='delete-visitador'){
-        if(confirm('Remover este visitador?')){
+        if(confirm('Remover este militar?')){
           visitadorDelete(id).then(ok=>{ if(ok) showToast('Visitador removido.'); });
         }
       }
@@ -1424,6 +1450,7 @@ function attachGlobalHandlers(){
       else if(action==='select-atrasados'){ selecionarAtrasados(); }
       else if(action==='clear-route'){ limparRota(); }
       else if(action==='gerar-trajeto'){ gerarTrajeto(); }
+      else if(action==='localizar-me'){ localizarMe(); }
     };
   });
 

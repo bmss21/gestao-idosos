@@ -386,9 +386,9 @@ let unsubIdosos = null, unsubVisitadores = null;
 let lastReportText = null;
 
 const STATUS = {
-  green:  {label:'Visitado há < 2 semanas', color:getVar('--green')},
-  yellow: {label:'Visitado há 2–5 semanas', color:getVar('--yellow')},
-  red:    {label:'Sem visita há mais de 5 semanas', color:getVar('--red')}
+  green:  {label:'Visitado há < 5 semanas', color:getVar('--green')},
+  yellow: {label:'Visitado há 5–8 semanas', color:getVar('--yellow')},
+  red:    {label:'Sem visita há mais de 8 semanas', color:getVar('--red')}
 };
 function getVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'; }
 
@@ -553,8 +553,8 @@ function weeksSince(dateStr){
 function statusFor(dateStr){
   if(!dateStr) return 'red';
   const w = weeksSince(dateStr);
-  if(w < 2) return 'green';
-  if(w <= 5) return 'yellow';
+  if(w <= 5) return 'green';
+  if(w <= 8) return 'yellow';
   return 'red';
 }
 function fmtDate(dateStr){
@@ -810,9 +810,9 @@ function renderIdososTab(){
     <div class="toolbar">
       <input type="text" id="search-idosos" placeholder="Procurar por nome, ID ou morada…" value="${esc(state.search)}">
       <div class="legend" style="margin-left:8px;">
-        <span><span class="dot" style="background:${STATUS.green.color}"></span>&lt; 2 sem.</span>
-        <span><span class="dot" style="background:${STATUS.yellow.color}"></span>2–5 sem.</span>
-        <span><span class="dot" style="background:${STATUS.red.color}"></span>&gt; 5 sem.</span>
+        <span><span class="dot" style="background:${STATUS.green.color}"></span>&lt; 5 sem.</span>
+        <span><span class="dot" style="background:${STATUS.yellow.color}"></span>5–8 sem.</span>
+        <span><span class="dot" style="background:${STATUS.red.color}"></span>&gt; 8 sem.</span>
       </div>
     </div>
     ${list.length===0 ? `<div class="empty">Nenhum idoso encontrado.<br>Clica em <strong>+ Novo idoso</strong> para começar a ficha.</div>` : `
@@ -840,9 +840,9 @@ function renderMapaTab(){
       </div>
     </div>
     <div class="legend">
-      <span><span class="dot" style="background:${STATUS.green.color}"></span>Visitado há menos de 2 semanas</span>
-      <span><span class="dot" style="background:${STATUS.yellow.color}"></span>Entre 2 e 5 semanas</span>
-      <span><span class="dot" style="background:${STATUS.red.color}"></span>Mais de 5 semanas</span>
+      <span><span class="dot" style="background:${STATUS.green.color}"></span>Visitado há menos de 5 semanas</span>
+      <span><span class="dot" style="background:${STATUS.yellow.color}"></span>Entre 5 e 8 semanas</span>
+      <span><span class="dot" style="background:${STATUS.red.color}"></span>Mais de 8 semanas</span>
     </div>
     <div style="position:relative;">
       <div id="map"></div>

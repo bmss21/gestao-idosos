@@ -792,7 +792,14 @@ function renderIdososTab(){
   let list = state.idosos.map(i=>({...i, _status:statusFor(ultimaVisitaInfo(i).data), _weeks: weeksSince(ultimaVisitaInfo(i).data)}));
   if(state.search.trim()){
     const q = state.search.trim().toLowerCase();
-    list = list.filter(i=> i.nome.toLowerCase().includes(q) || i.id.toLowerCase().includes(q) || (i.morada||'').toLowerCase().includes(q) || (i.idSiiopP||'').toLowerCase().includes(q));
+    list = list.filter(i=>
+      i.nome.toLowerCase().includes(q) ||
+      i.id.toLowerCase().includes(q) ||
+      (i.morada||'').toLowerCase().includes(q) ||
+      (i.idSiiopP||'').toLowerCase().includes(q) ||
+      (i.observacoes||'').toLowerCase().includes(q) ||
+      (i.visitas||[]).some(v=>(v.observacoes||'').toLowerCase().includes(q))
+    );
   }
   list.sort((a,b)=> b._weeks - a._weeks);
 
@@ -804,11 +811,12 @@ function renderIdososTab(){
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn ghost" data-action="import-excel">📄 Importar Excel</button>
+        <button class="btn ghost" data-action="export-excel">⬇️ Exportar Excel</button>
         <button class="btn accent" data-action="new-idoso">+ Novo idoso</button>
       </div>
     </div>
     <div class="toolbar">
-      <input type="text" id="search-idosos" placeholder="Procurar por nome, ID ou morada…" value="${esc(state.search)}">
+      <input type="text" id="search-idosos" placeholder="Procurar por nome, ID, morada ou observações…" value="${esc(state.search)}">
       <div class="legend" style="margin-left:8px;">
         <span><span class="dot" style="background:${STATUS.green.color}"></span>&lt; 5 sem.</span>
         <span><span class="dot" style="background:${STATUS.yellow.color}"></span>5–8 sem.</span>
@@ -1132,7 +1140,7 @@ function renderVisitaTab(prefillId){
           </select>
         </div>
         <div class="field">
-          <label>Militar do SPC</label>
+          <label>Militar do SPC *</label>
           <select name="visitadorId">
             <option value="">Selecionar…</option>
             ${state.visitadores.map(v=>`<option value="${v.id}">${esc(v.nome)} — ${esc(v.posto)}</option>`).join('')}
@@ -1162,6 +1170,7 @@ function renderModal(){
   if(type==='visitadorForm') inner = visitadorFormHTML(payload);
   if(type==='reportPreview') inner = reportPreviewHTML(payload);
   if(type==='importExcel') inner = importExcelHTML(payload);
+  if(type==='editVisita') inner = editVisitaHTML(payload);
 
   const wrap = document.createElement('div');
   wrap.className = 'overlay';
@@ -1195,6 +1204,9 @@ function fichaHTML(id){
       <div><div class="k">Pessoa próxima</div><div class="v">${esc(i.pessoaProximaNome||'—')}</div></div>
       <div><div class="k">Contacto da pessoa próxima</div><div class="v">${esc(i.pessoaProximaContacto||'—')}</div></div>
     </div>
+    ${i.observacoes ? `
+    <div class="k">Observações</div>
+    <div class="v" style="margin-bottom:14px;white-space:pre-wrap;">${esc(i.observacoes)}</div>` : ''}
     <hr class="div">
     <h3 style="font-size:15px;margin:0 0 10px;">Histórico de visitas</h3>
     ${hist.length===0 ? `<p class="hint">Ainda sem visitas registadas.</p>` : hist.map(v=>`
@@ -1202,8 +1214,9 @@ function fichaHTML(id){
         <div class="date">${fmtDate(v.dataHora)}</div>
         <div class="who">${v.visitadorId ? esc((findVisitador(v.visitadorId)||{}).nome||'—') : '—'}</div>
         <div class="obs">${esc(v.observacoes)}</div>
-        <div style="margin-top:6px;">
+        <div style="margin-top:6px;display:flex;gap:6px;">
           <button class="btn ghost sm" data-action="preview-report" data-id="${esc(i.id)}" data-vidx="${(i.visitas||[]).indexOf(v)}">Ver relatório</button>
+          <button class="btn ghost sm" data-action="edit-visita" data-id="${esc(i.id)}" data-vidx="${(i.visitas||[]).indexOf(v)}">Editar</button>
         </div>
       </div>`).join('')}
     <div class="modal-actions">
@@ -1239,6 +1252,8 @@ function idosoFormHTML(id){
       <hr class="div">
       <div class="field"><label>Nome da pessoa próxima</label><input name="pessoaProximaNome" value="${esc(i.pessoaProximaNome)}"></div>
       <div class="field"><label>Contacto da pessoa próxima</label><input name="pessoaProximaContacto" value="${esc(i.pessoaProximaContacto)}" placeholder="Nº WhatsApp com indicativo, ex: +351912345678"></div>
+      <hr class="div">
+      <div class="field"><label>Observações</label><textarea name="observacoes" rows="3" placeholder="Notas gerais sobre o idoso (não é o relatório de uma visita específica)">${esc(i.observacoes)}</textarea></div>
       <p id="form-idoso-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
       <div class="modal-actions">
         <button class="btn accent" type="submit">Guardar</button>
@@ -1263,6 +1278,48 @@ function visitadorFormHTML(id){
       <p id="form-visitador-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
       <div class="modal-actions">
         <button class="btn accent" type="submit">Guardar</button>
+        <button class="btn ghost" type="button" data-action="close-modal">Cancelar</button>
+      </div>
+    </form>
+  `;
+}
+
+function editVisitaHTML(payload){
+  const {idosoId, vidx} = payload;
+  const i = findIdoso(idosoId);
+  const v = i && (i.visitas||[])[vidx];
+  if(!i || !v){
+    return `<div class="modal-head"><h2>Editar visita</h2><button class="close-x" data-action="close-modal">✕</button></div>
+      <p class="hint">Não foi possível encontrar esta visita.</p>`;
+  }
+  // datetime-local precisa do formato AAAA-MM-DDTHH:MM em hora local
+  const d = new Date(v.dataHora);
+  const dataHoraLocal = new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  return `
+    <div class="modal-head">
+      <h2>Editar visita</h2>
+      <button class="close-x" data-action="close-modal">✕</button>
+    </div>
+    <p class="hint" style="margin-top:-8px;">${esc(i.nome)} — ${esc(i.id)}</p>
+    <form id="form-editar-visita" data-idoso="${esc(idosoId)}" data-vidx="${vidx}" novalidate>
+      <div class="field">
+        <label>Militar do SPC *</label>
+        <select name="visitadorId">
+          <option value="">Selecionar…</option>
+          ${state.visitadores.map(vv=>`<option value="${vv.id}" ${v.visitadorId===vv.id?'selected':''}>${esc(vv.nome)} — ${esc(vv.posto)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label>Data e hora da visita</label>
+        <input type="datetime-local" name="dataHora" value="${dataHoraLocal}">
+      </div>
+      <div class="field">
+        <label>Observações</label>
+        <textarea name="observacoes" rows="4">${esc(v.observacoes)}</textarea>
+      </div>
+      <p id="form-editar-visita-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
+      <div class="modal-actions">
+        <button class="btn accent" type="submit">Guardar alterações</button>
         <button class="btn ghost" type="button" data-action="close-modal">Cancelar</button>
       </div>
     </form>
@@ -1405,6 +1462,61 @@ async function confirmarImportacao(){
   showToast(`Importação concluída: ${sucesso} idoso(s) importados${falhas?`, ${falhas} falharam`:''}.`);
 }
 
+/* Gera um ficheiro Excel a partir dos dados atuais: uma folha "Idosos" (uma
+   linha por idoso) e outra "Histórico de Visitas" (uma linha por visita). */
+function exportarExcel(){
+  if(state.idosos.length===0){ showToast('Ainda não há idosos para exportar.'); return; }
+
+  const folhaIdosos = state.idosos.map(i=>{
+    const info = ultimaVisitaInfo(i);
+    const st = statusFor(info.data);
+    return {
+      'ID': i.id,
+      'Nome': i.nome,
+      'ID SIIOP-P': i.idSiiopP||'',
+      'Morada': i.morada||'',
+      'Contacto': i.contacto||'',
+      'Pessoa Próxima': i.pessoaProximaNome||'',
+      'Contacto Pessoa Próxima': i.pessoaProximaContacto||'',
+      'Latitude': i.lat!=null?i.lat:'',
+      'Longitude': i.lng!=null?i.lng:'',
+      'Observações': i.observacoes||'',
+      'Data Última Visita': info.data ? fmtDate(info.data) : '',
+      'Estado': STATUS[st].label,
+      'Nº Visitas': (i.visitas||[]).length
+    };
+  });
+
+  const folhaVisitas = [];
+  state.idosos.forEach(i=>{
+    (i.visitas||[]).forEach(v=>{
+      folhaVisitas.push({
+        'ID Idoso': i.id,
+        'Nome Idoso': i.nome,
+        'Data e Hora': fmtDate(v.dataHora),
+        'Militar do SPC': v.visitadorId ? ((findVisitador(v.visitadorId)||{}).nome||'') : '',
+        'Observações': v.observacoes||''
+      });
+    });
+  });
+  folhaVisitas.sort((a,b)=> a['Nome Idoso'].localeCompare(b['Nome Idoso']));
+
+  const wb = XLSX.utils.book_new();
+  const wsIdosos = XLSX.utils.json_to_sheet(folhaIdosos);
+  wsIdosos['!cols'] = [{wch:8},{wch:26},{wch:12},{wch:40},{wch:14},{wch:20},{wch:20},{wch:11},{wch:11},{wch:40},{wch:18},{wch:22},{wch:10}];
+  XLSX.utils.book_append_sheet(wb, wsIdosos, 'Idosos');
+
+  if(folhaVisitas.length>0){
+    const wsVisitas = XLSX.utils.json_to_sheet(folhaVisitas);
+    wsVisitas['!cols'] = [{wch:8},{wch:26},{wch:18},{wch:22},{wch:50}];
+    XLSX.utils.book_append_sheet(wb, wsVisitas, 'Histórico de Visitas');
+  }
+
+  const hoje = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `idosos_export_${hoje}.xlsx`);
+  showToast('Ficheiro Excel gerado.');
+}
+
 /* ============================= HANDLERS ============================= */
 function attachGlobalHandlers(){
   document.querySelectorAll('.tab-btn').forEach(b=>{
@@ -1445,12 +1557,14 @@ function attachGlobalHandlers(){
           const sel = document.querySelector('#form-visita [name=idosoId]'); if(sel) sel.value = id;
         },0); }
       else if(action==='preview-report'){ state.modal={type:'reportPreview', payload:{idosoId:id, vidx:parseInt(el.dataset.vidx,10)}}; render(); }
+      else if(action==='edit-visita'){ state.modal={type:'editVisita', payload:{idosoId:id, vidx:parseInt(el.dataset.vidx,10)}}; render(); }
       else if(action==='copy-report'){
         if(lastReportText) navigator.clipboard.writeText(lastReportText).then(()=>showToast('Relatório copiado.'));
       }
       else if(action==='close-modal'){ closeModal(); }
       else if(action==='geocode-morada'){ geocodeMorada(); }
       else if(action==='import-excel'){ state.modal={type:'importExcel', payload:null}; render(); }
+      else if(action==='export-excel'){ exportarExcel(); }
       else if(action==='confirmar-importacao'){ confirmarImportacao(); }
       else if(action==='logout'){ signOut(auth); }
       else if(action==='testar-ligacao'){ testarLigacao(); }
@@ -1470,16 +1584,22 @@ function attachGlobalHandlers(){
       const idosoId = fd.get('idosoId');
       const dataHora = fd.get('dataHora');
       const observacoes = (fd.get('observacoes')||'').trim();
+      const visitadorId = fd.get('visitadorId') || '';
       const i = findIdoso(idosoId);
       if(!i || !dataHora || !observacoes){
         errEl.textContent = 'Seleciona o idoso, a data/hora e escreve uma observação.';
         errEl.style.display = 'block';
         return;
       }
+      if(!visitadorId){
+        errEl.textContent = 'Indica qual o militar do SPC que efetuou a visita.';
+        errEl.style.display = 'block';
+        return;
+      }
       errEl.style.display = 'none';
       const visita = {
         dataHora: new Date(dataHora).toISOString(),
-        visitadorId: fd.get('visitadorId') || null,
+        visitadorId,
         observacoes
       };
       const btn = vf.querySelector('button[type=submit]');
@@ -1497,6 +1617,44 @@ function attachGlobalHandlers(){
 }
 
 function attachModalHandlers(){
+  const formEditarVisita = document.getElementById('form-editar-visita');
+  if(formEditarVisita){
+    formEditarVisita.onsubmit = async (e)=>{
+      e.preventDefault();
+      const errEl = document.getElementById('form-editar-visita-error');
+      const fd = new FormData(formEditarVisita);
+      const visitadorId = fd.get('visitadorId') || '';
+      const dataHora = fd.get('dataHora');
+      const observacoes = (fd.get('observacoes')||'').trim();
+      if(!visitadorId){
+        errEl.textContent = 'Indica qual o militar do SPC que efetuou a visita.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if(!dataHora){
+        errEl.textContent = 'Indica a data e hora da visita.';
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      const idosoId = formEditarVisita.dataset.idoso;
+      const vidx = parseInt(formEditarVisita.dataset.vidx, 10);
+      const i = findIdoso(idosoId);
+      if(!i || !i.visitas || !i.visitas[vidx]){
+        errEl.textContent = 'Esta visita já não existe.';
+        errEl.style.display = 'block';
+        return;
+      }
+      const visitas = i.visitas.slice();
+      visitas[vidx] = {...visitas[vidx], visitadorId, dataHora: new Date(dataHora).toISOString(), observacoes};
+      const novaUltima = visitas[visitas.length-1].dataHora;
+      const btn = formEditarVisita.querySelector('button[type=submit]');
+      btn.disabled = true; btn.textContent = 'A guardar…';
+      const ok = await idosoSave(idosoId, {...i, visitas, dataUltimaVisita: novaUltima});
+      state.modal = null; render();
+      if(ok) showToast('Visita atualizada.');
+    };
+  }
   const inputExcel = document.getElementById('input-excel');
   if(inputExcel){
     inputExcel.onchange = async ()=>{
@@ -1541,6 +1699,7 @@ function attachModalHandlers(){
         lng: parseCoord(fd.get('lng')),
         pessoaProximaNome: (fd.get('pessoaProximaNome')||'').trim(),
         pessoaProximaContacto: (fd.get('pessoaProximaContacto')||'').trim(),
+        observacoes: (fd.get('observacoes')||'').trim(),
         visitas: existing ? (existing.visitas||[]) : [],
         dataUltimaVisita: existing ? (existing.dataUltimaVisita||null) : null
       };

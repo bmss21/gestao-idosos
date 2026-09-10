@@ -131,6 +131,13 @@
   .btn.danger{background:transparent;color:var(--red);border:1px solid var(--red);}
   .btn.danger:hover{background:var(--red-tint);}
   .btn.sm{padding:5px 10px;font-size:11.5px;border-radius:5px;}
+  /* O Leaflet define uma cor própria para links dentro do mapa
+     (.leaflet-container a) com mais prioridade do que .btn — isto repõe
+     as cores certas especificamente para botões dentro dos popups. */
+  .leaflet-popup-content a.btn{color:#fff;}
+  .leaflet-popup-content a.btn.ghost{color:var(--ink);}
+  .leaflet-popup-content a.btn:hover, .leaflet-popup-content a.btn:visited{color:#fff;}
+  .leaflet-popup-content a.btn.ghost:hover, .leaflet-popup-content a.btn.ghost:visited{color:var(--ink);}
   .btn:disabled{opacity:0.45;cursor:not-allowed;}
 
   input,select,textarea{

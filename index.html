@@ -865,12 +865,9 @@ function renderMapaTab(){
           <button class="btn ghost sm" type="button" data-action="clear-route">Limpar seleção</button>
         </div>
       </div>
-      <p class="hint" style="margin:0 0 10px;">Escolhe quem visitar (já ordenado por urgência) e abre o trajeto pronto no Google Maps.</p>
+      <p class="hint" style="margin:0 0 10px;">Escolhe quem visitar, aqui ou clicando nos pontos do mapa — o trajeto é sempre calculado pela ordem mais eficiente (não pela ordem em que selecionas).</p>
       <div id="route-list" style="max-height:280px;overflow-y:auto;">${routeListHTML()}</div>
       <div style="margin-top:12px;display:flex;flex-direction:column;gap:6px;">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:500;color:var(--ink);">
-          <input type="checkbox" id="optimize-route" checked style="width:auto;"> Otimizar ordem automaticamente
-        </label>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:500;color:var(--ink);">
           <input type="checkbox" id="use-my-location" style="width:auto;"> Partir da minha localização atual
         </label>
@@ -988,8 +985,7 @@ async function gerarTrajeto(){
   // Abre já o separador (dentro do gesto de clique) para não ser bloqueado
   // como pop-up; preenchemos o endereço assim que soubermos a localização.
   const newTab = window.open('', '_blank');
-  const optimizeEl = document.getElementById('optimize-route');
-  const optimize = optimizeEl ? optimizeEl.checked : true;
+  const optimize = true; // o trajeto é sempre calculado pela ordem mais eficiente
   const useLocationEl = document.getElementById('use-my-location');
   let origin, destPoints;
   if(useLocationEl && useLocationEl.checked){
@@ -1062,6 +1058,21 @@ function initMap(){
         render();
       };
     }
+    const btnRota = node.querySelector('[data-popup-rota]');
+    if(btnRota){
+      btnRota.onclick = ()=>{
+        const idosoId = btnRota.dataset.popupRota;
+        const selecionado = state.routeSelection.has(idosoId);
+        if(selecionado){ state.routeSelection.delete(idosoId); } else { state.routeSelection.add(idosoId); }
+        updateMarkerHighlight(idosoId, !selecionado);
+        btnRota.textContent = !selecionado ? '✅ No trajeto (tocar para remover)' : '➕ Adicionar ao trajeto';
+        btnRota.classList.toggle('accent', !selecionado);
+        btnRota.classList.toggle('ghost', selecionado);
+        const cb = document.querySelector(`.route-check[data-id="${CSS.escape(idosoId)}"]`);
+        if(cb) cb.checked = !selecionado;
+        updateRouteSummary();
+      };
+    }
   });
 
   if(pts.length===0){
@@ -1074,12 +1085,14 @@ function initMap(){
     const icon = buildMarkerIcon(STATUS[st].color, state.routeSelection.has(i.id));
     const m = L.marker([i.lat, i.lng], {icon}).addTo(state.map);
     const info = ultimaVisitaInfo(i);
+    const jaSelecionado = state.routeSelection.has(i.id);
     m.bindPopup(`
       <div class="popup-name">${esc(i.nome)}</div>
       <div class="popup-row mono">${esc(i.id)}</div>
       <div class="popup-row">Última visita: ${fmtDate(info.data)}</div>
       <div class="popup-row"><strong>${esc(STATUS[st].label)}</strong></div>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn ${jaSelecionado?'accent':'ghost'} sm" data-popup-rota="${esc(i.id)}">${jaSelecionado?'✅ No trajeto (tocar para remover)':'➕ Adicionar ao trajeto'}</button>
         <a class="btn accent sm" href="https://www.google.com/maps/dir/?api=1&destination=${i.lat},${i.lng}&travelmode=driving" target="_blank" rel="noopener">🧭 Navegar até aqui</a>
         <button class="btn ghost sm" data-popup-visita="${esc(i.id)}">Registar visita</button>
         <button class="btn ghost sm" data-popup-ficha="${esc(i.id)}">Ver ficha</button>

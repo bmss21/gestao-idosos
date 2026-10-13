@@ -1225,6 +1225,15 @@ function fichaHTML(id){
       <div><div class="k">ID SIIOP-P</div><div class="v">${esc(i.idSiiopP||'—')}</div></div>
       <div><div class="k">Morada</div><div class="v">${esc(i.morada||'—')}</div></div>
       <div><div class="k">Contacto</div><div class="v">${esc(i.contacto||'—')}</div></div>
+      <div><div class="k">Sexo</div><div class="v">${esc(i.sexo||'—')}</div></div>
+      <div><div class="k">Estado civil</div><div class="v">${esc(i.estadoCivil||'—')}</div></div>
+      <div><div class="k">Data de nascimento</div><div class="v">${esc(fmtNasc(i.dataNascimento))}</div></div>
+      <div><div class="k">Vive sozinho(a)</div><div class="v">${esc(i.viveSozinho||'—')}</div></div>
+      <div><div class="k">Vive isolado(a)</div><div class="v">${esc(i.viveIsolado||'—')}</div></div>
+      <div><div class="k">Agregado familiar</div><div class="v">${esc(i.agregadoFamiliar||'—')}</div></div>
+      <div><div class="k">Tipo de habitação</div><div class="v">${esc(i.tipoHabitacao||'—')}</div></div>
+      <div><div class="k">Médico de família</div><div class="v">${esc(i.medicoFamilia||'—')}</div></div>
+      <div><div class="k">Posto / Centro de saúde</div><div class="v">${esc(i.postoSaude||'—')}</div></div>
       <div><div class="k">Pessoa próxima</div><div class="v">${esc(i.pessoaProximaNome||'—')}</div></div>
       <div><div class="k">Contacto da pessoa próxima</div><div class="v">${esc(i.pessoaProximaContacto||'—')}</div></div>
     </div>
@@ -1251,6 +1260,22 @@ function fichaHTML(id){
   `;
 }
 
+function selOpts(name, opts, cur){
+  return `<select name="${name}"><option value="">— Selecionar —</option>${opts.map(o=>`<option value="${esc(o)}"${o===cur?' selected':''}>${esc(o)}</option>`).join('')}</select>`;
+}
+function calcIdade(d){
+  if(!d) return '';
+  const n=new Date(d); if(isNaN(n)) return '';
+  const h=new Date(); let a=h.getFullYear()-n.getFullYear();
+  const m=h.getMonth()-n.getMonth();
+  if(m<0||(m===0&&h.getDate()<n.getDate())) a--;
+  return a;
+}
+function fmtNasc(d){
+  if(!d) return '—';
+  const p=String(d).split('-'); if(p.length!==3) return d;
+  return `${p[2]}/${p[1]}/${p[0]} (${calcIdade(d)} anos)`;
+}
 function idosoFormHTML(id){
   const editing = !!id;
   const i = editing ? findIdoso(id) : {};
@@ -1273,6 +1298,22 @@ function idosoFormHTML(id){
         <a href="#" id="link-ver-mapa" target="_blank" rel="noopener" style="font-size:12.5px;display:none;">Ver no Google Maps ↗</a>
       </div>
       <p id="geocode-status" class="hint" style="margin-top:-6px;margin-bottom:14px;"></p>
+      <hr class="div">
+      <div class="field-row">
+        <div class="field"><label>Sexo</label>${selOpts('sexo',['Masculino','Feminino'],i.sexo)}</div>
+        <div class="field"><label>Estado civil</label>${selOpts('estadoCivil',['Casado(a)','Solteiro(a)','Viúvo(a)','Divorciado(a)'],i.estadoCivil)}</div>
+      </div>
+      <div class="field"><label>Data de nascimento</label><input type="date" name="dataNascimento" value="${esc(i.dataNascimento)}"></div>
+      <div class="field-row">
+        <div class="field"><label>Vive sozinho(a)?</label>${selOpts('viveSozinho',['Sim','Não'],i.viveSozinho)}</div>
+        <div class="field"><label>Vive isolado(a)?</label>${selOpts('viveIsolado',['Sim','Não'],i.viveIsolado)}</div>
+      </div>
+      <div class="field"><label>Com quem mais vive / composição do agregado familiar</label><input name="agregadoFamiliar" value="${esc(i.agregadoFamiliar)}" placeholder="Ex: cônjuge e filho"></div>
+      <div class="field"><label>Tipo de habitação</label>${selOpts('tipoHabitacao',['Apartamento','Moradia','Casa rural / isolada','Lar / residência','Outro'],i.tipoHabitacao)}</div>
+      <div class="field-row">
+        <div class="field"><label>Médico de família</label><input name="medicoFamilia" value="${esc(i.medicoFamilia)}"></div>
+        <div class="field"><label>Posto / Centro de saúde</label><input name="postoSaude" value="${esc(i.postoSaude)}"></div>
+      </div>
       <hr class="div">
       <div class="field"><label>Nome da pessoa próxima</label><input name="pessoaProximaNome" value="${esc(i.pessoaProximaNome)}"></div>
       <div class="field"><label>Contacto da pessoa próxima</label><input name="pessoaProximaContacto" value="${esc(i.pessoaProximaContacto)}" placeholder="Nº WhatsApp com indicativo, ex: +351912345678"></div>
@@ -1388,6 +1429,15 @@ const MAPA_COLUNAS = {
   contacto: ['contacto','telefone','contato'],
   pessoaProximaNome: ['pessoaproxima','nomepessoaproxima','contactodeemergencianome','pessoacontacto'],
   pessoaProximaContacto: ['contactopessoaproxima','telefonepessoaproxima','contactodeemergencia'],
+  sexo: ['sexo','genero'],
+  estadoCivil: ['estadocivil'],
+  dataNascimento: ['datadenascimento','datanascimento','nascimento'],
+  viveSozinho: ['vivesozinho','vivesozinha'],
+  viveIsolado: ['viveisolado','viveisolada','isolado'],
+  agregadoFamiliar: ['agregadofamiliar','composicaodoagregadofamiliar','comquemvive'],
+  tipoHabitacao: ['tipodehabitacao','tipohabitacao','habitacao'],
+  medicoFamilia: ['medicodefamilia','medicofamilia'],
+  postoSaude: ['postodesaude','postosaude','centrodesaude'],
   lat: ['lat','latitude'],
   lng: ['lng','lon','long','longitude']
 };
@@ -1456,6 +1506,14 @@ function importExcelHTML(payload){
     </div>
   `;
 }
+function normData(v){
+  if(v==null||v==='') return '';
+  if(v instanceof Date && !isNaN(v)) return v.toISOString().slice(0,10);
+  if(typeof v==='number'){ const d=new Date(Math.round((v-25569)*86400000)); return isNaN(d)?'':d.toISOString().slice(0,10); }
+  const m=String(v).trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v).trim()) ? String(v).trim() : '';
+}
 async function confirmarImportacao(){
   const rows = state.modal && state.modal.payload && state.modal.payload.rows;
   if(!rows || rows.length===0) return;
@@ -1471,6 +1529,15 @@ async function confirmarImportacao(){
       idSiiopP: String(r.idSiiopP||'').trim(),
       morada: String(r.morada||'').trim(),
       contacto: String(r.contacto||'').trim(),
+      sexo: String(r.sexo||'').trim(),
+      estadoCivil: String(r.estadoCivil||'').trim(),
+      dataNascimento: normData(r.dataNascimento),
+      viveSozinho: String(r.viveSozinho||'').trim(),
+      viveIsolado: String(r.viveIsolado||'').trim(),
+      agregadoFamiliar: String(r.agregadoFamiliar||'').trim(),
+      tipoHabitacao: String(r.tipoHabitacao||'').trim(),
+      medicoFamilia: String(r.medicoFamilia||'').trim(),
+      postoSaude: String(r.postoSaude||'').trim(),
       pessoaProximaNome: String(r.pessoaProximaNome||'').trim(),
       pessoaProximaContacto: String(r.pessoaProximaContacto||'').trim(),
       lat: r.lat!=null && r.lat!=='' ? parseCoord(r.lat) : null,
@@ -1500,6 +1567,15 @@ function exportarExcel(){
       'ID SIIOP-P': i.idSiiopP||'',
       'Morada': i.morada||'',
       'Contacto': i.contacto||'',
+      'Sexo': i.sexo||'',
+      'Estado Civil': i.estadoCivil||'',
+      'Data de Nascimento': i.dataNascimento ? fmtNasc(i.dataNascimento).split(' ')[0] : '',
+      'Vive Sozinho': i.viveSozinho||'',
+      'Vive Isolado': i.viveIsolado||'',
+      'Agregado Familiar': i.agregadoFamiliar||'',
+      'Tipo de Habitação': i.tipoHabitacao||'',
+      'Médico de Família': i.medicoFamilia||'',
+      'Posto de Saúde': i.postoSaude||'',
       'Pessoa Próxima': i.pessoaProximaNome||'',
       'Contacto Pessoa Próxima': i.pessoaProximaContacto||'',
       'Latitude': i.lat!=null?i.lat:'',
@@ -1721,6 +1797,15 @@ function attachModalHandlers(){
         contacto: (fd.get('contacto')||'').trim(),
         lat: parseCoord(fd.get('lat')),
         lng: parseCoord(fd.get('lng')),
+        sexo: fd.get('sexo')||'',
+        estadoCivil: fd.get('estadoCivil')||'',
+        dataNascimento: fd.get('dataNascimento')||'',
+        viveSozinho: fd.get('viveSozinho')||'',
+        viveIsolado: fd.get('viveIsolado')||'',
+        agregadoFamiliar: (fd.get('agregadoFamiliar')||'').trim(),
+        tipoHabitacao: fd.get('tipoHabitacao')||'',
+        medicoFamilia: (fd.get('medicoFamilia')||'').trim(),
+        postoSaude: (fd.get('postoSaude')||'').trim(),
         pessoaProximaNome: (fd.get('pessoaProximaNome')||'').trim(),
         pessoaProximaContacto: (fd.get('pessoaProximaContacto')||'').trim(),
         observacoes: (fd.get('observacoes')||'').trim(),

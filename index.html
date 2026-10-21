@@ -847,7 +847,7 @@ function renderTab(){
 }
 
 /* ============================= TAB: IDOSOS ============================= */
-function renderIdososTab(){
+function idososFiltrados(){
   let list = state.idosos.map(i=>({...i, _status:statusFor(ultimaVisitaInfo(i).data), _weeks: weeksSince(ultimaVisitaInfo(i).data)}));
   if(state.search.trim()){
     const q = state.search.trim().toLowerCase();
@@ -861,7 +861,10 @@ function renderIdososTab(){
     );
   }
   list.sort((a,b)=> b._weeks - a._weeks);
-
+  return list;
+}
+function renderIdososTab(){
+  const list = idososFiltrados();
   return `
     <div class="page-head">
       <div>
@@ -882,7 +885,11 @@ function renderIdososTab(){
         <span><span class="dot" style="background:${STATUS.red.color}"></span>&gt; 8 sem.</span>
       </div>
     </div>
-    ${list.length===0 ? `<div class="empty">Nenhum idoso encontrado.<br>Clica em <strong>+ Novo idoso</strong> para começar a ficha.</div>` : `
+    <div id="idosos-list-wrap">${idososListHTML(list)}</div>
+  `;
+}
+function idososListHTML(list){
+  return list.length===0 ? `<div class="empty">Nenhum idoso encontrado.<br>Clica em <strong>+ Novo idoso</strong> para começar a ficha.</div>` : `
     <div class="idoso-list">
       ${list.map(i=>`
         <div class="idoso-row" data-action="open-ficha" data-id="${i.id}">
@@ -892,8 +899,7 @@ function renderIdososTab(){
           <span class="morada">${esc(i.morada||'—')}</span>
           <span class="status-label status-${i._status}"><span class="stamp status-${i._status}"></span>${STATUS[i._status].label}</span>
         </div>`).join('')}
-    </div>`}
-  `;
+    </div>`;
 }
 
 /* ============================= TAB: MAPA ============================= */
@@ -1677,7 +1683,16 @@ function attachGlobalHandlers(){
   });
   const search = document.getElementById('search-idosos');
   if(search){
-    search.oninput = ()=>{ state.search = search.value; render(); setTimeout(()=>{ const s=document.getElementById('search-idosos'); if(s){ s.focus(); s.selectionStart=s.selectionEnd=s.value.length; } },0); };
+    search.oninput = ()=>{
+      // Atualiza só a lista (sem refazer o ecrã) para o teclado do telemóvel não fechar
+      state.search = search.value;
+      const wrap = document.getElementById('idosos-list-wrap');
+      if(!wrap) return;
+      wrap.innerHTML = idososListHTML(idososFiltrados());
+      wrap.querySelectorAll('[data-action="open-ficha"]').forEach(el=>{
+        el.onclick = ()=>{ state.modal={type:'ficha', payload:el.dataset.id}; render(); };
+      });
+    };
   }
   document.querySelectorAll('[data-action]').forEach(el=>{
     const action = el.dataset.action;

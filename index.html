@@ -424,8 +424,24 @@ function stopListening(){
   state.idosos = []; state.visitadores = [];
   state.idososLoaded = state.visitadoresLoaded = false;
 }
+setInterval(()=>{
+  if(!state.pendingRender) return;
+  const ae = document.activeElement;
+  const aEscrever = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+  if(aEscrever || document.querySelector('#app form, .overlay form')) return;
+  state.pendingRender = false; render();
+}, 2000);
 function updateLoaded(){
+  const jaCarregado = state.loaded;
   state.loaded = state.idososLoaded && state.visitadoresLoaded;
+  // Se alguém está a preencher um formulário (ou a escrever), NÃO refazer o ecrã:
+  // senão os dados em preenchimento seriam apagados por uma alteração feita por outra pessoa.
+  if(jaCarregado && state.loaded){
+    const ae = document.activeElement;
+    const aEscrever = ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && document.getElementById('app').contains(ae);
+    const formAberto = document.querySelector('#app form, .overlay form');
+    if(aEscrever || formAberto){ state.pendingRender = true; return; }
+  }
   render();
 }
 
@@ -494,9 +510,14 @@ function toFirestoreFields(obj){
   for(const k in obj){ if(obj[k]!==undefined) fields[k] = toFirestoreValue(obj[k]); }
   return fields;
 }
-async function restWriteDoc(collectionName, id, data){
+async function restWriteDoc(collectionName, id, data, opts){
+  opts = opts || {};
   const token = await auth.currentUser.getIdToken();
-  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
+  let url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
+  const qs = [];
+  if(opts.createOnly) qs.push('currentDocument.exists=false');   // falha se o ID já existir (evita sobrescrever)
+  if(opts.mask) opts.mask.forEach(k=>qs.push('updateMask.fieldPaths='+encodeURIComponent(k))); // só altera estes campos
+  if(qs.length) url += '?' + qs.join('&');
   const res = await withTimeout(fetch(url, {
     method: 'PATCH',
     headers: {'Authorization': 'Bearer '+token, 'Content-Type':'application/json'},
@@ -504,7 +525,9 @@ async function restWriteDoc(collectionName, id, data){
   }), 8000, `guardar em ${collectionName}`);
   if(!res.ok){
     const errBody = await res.text().catch(()=>'');
-    throw new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
+    const e = new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
+    e.status = res.status; e.body = errBody;
+    throw e;
   }
 }
 async function restDeleteDoc(collectionName, id){
@@ -523,6 +546,31 @@ async function restDeleteDoc(collectionName, id){
 async function idosoSave(id, data){
   try{ await restWriteDoc('idosos', id, data); return true; }
   catch(e){ showErrorBanner('Erro ao guardar idoso: ' + e.message); return false; }
+}
+/* Cria um idoso novo com ID garantidamente único: se outra pessoa criou o
+   mesmo ID ao mesmo tempo, tenta o seguinte em vez de sobrescrever. */
+async function idosoCreateUnique(data, startList){
+  const base = uid('ID', startList || state.idosos);
+  let n = parseInt(base.replace(/\D/g,''),10);
+  for(let tent=0; tent<30; tent++, n++){
+    const id = 'ID-' + String(n).padStart(3,'0');
+    try{
+      await restWriteDoc('idosos', id, {...data, id}, {createOnly:true});
+      return id;
+    }catch(e){
+      const conflito = e.status===409 || (e.status===400 && /ALREADY_EXISTS|FAILED_PRECONDITION/.test(e.body||'')) || e.status===412;
+      if(!conflito){ showErrorBanner('Erro ao guardar idoso: ' + e.message); return null; }
+    }
+  }
+  showErrorBanner('Não foi possível gerar um ID único. Tenta novamente.');
+  return null;
+}
+async function idosoUpdateFields(id, data){
+  try{
+    const mask = Object.keys(data).filter(k=>!['id','visitas','dataUltimaVisita'].includes(k));
+    await restWriteDoc('idosos', id, data, {mask});
+    return true;
+  }catch(e){ showErrorBanner('Erro ao guardar idoso: ' + e.message); return false; }
 }
 async function idosoDelete(id){
   try{ await restDeleteDoc('idosos', id); return true; }
@@ -1522,9 +1570,8 @@ async function confirmarImportacao(){
   for(let idx=0; idx<rows.length; idx++){
     if(statusEl) statusEl.textContent = `A importar ${idx+1} de ${rows.length}…`;
     const r = rows[idx];
-    const id = uid('ID', state.idosos.concat(Array(sucesso))); // evita reaproveitar o mesmo id dentro do lote
     const data = {
-      id,
+      id: '',
       nome: String(r.nome||'').trim(),
       idSiiopP: String(r.idSiiopP||'').trim(),
       morada: String(r.morada||'').trim(),
@@ -1545,8 +1592,8 @@ async function confirmarImportacao(){
       visitas: [],
       dataUltimaVisita: null
     };
-    const ok = await idosoSave(id, data);
-    if(ok){ sucesso++; state.idosos.push(data); } else { falhas++; }
+    const novoId = await idosoCreateUnique(data, state.idosos);
+    if(novoId){ sucesso++; data.id = novoId; state.idosos.push(data); } else { falhas++; }
   }
   state.modal = null;
   render();
@@ -1787,7 +1834,7 @@ function attachModalHandlers(){
       }
       errEl.style.display = 'none';
       const editId = idosoForm.dataset.id;
-      const id = editId || uid('ID', state.idosos);
+      const id = editId || '';
       const existing = editId ? findIdoso(editId) : null;
       const data = {
         id,
@@ -1815,7 +1862,9 @@ function attachModalHandlers(){
       const btn = idosoForm.querySelector('button[type=submit]');
       try{
         btn.disabled = true; btn.textContent = 'A guardar…';
-        const ok = await idosoSave(id, data);
+        let ok;
+        if(editId){ delete data.visitas; delete data.dataUltimaVisita; ok = await idosoUpdateFields(editId, data); }
+        else { ok = !!(await idosoCreateUnique(data)); }
         state.modal=null; render();
         if(ok) showToast('Ficha guardada.');
       }catch(err){

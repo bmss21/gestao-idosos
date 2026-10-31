@@ -1390,7 +1390,7 @@ function renderVisitaTab(prefillId){
         </div>
         <div class="field">
           <label>Observações *</label>
-          <textarea name="observacoes" rows="4" placeholder="Estado geral, necessidades identificadas, encaminhamentos…"></textarea>
+          <textarea name="observacoes" rows="4" maxlength="10000" placeholder="Estado geral, necessidades identificadas, encaminhamentos…"></textarea>
         </div>
         <p id="form-visita-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
         <button class="btn accent" type="submit">Guardar visita e gerar relatório</button>
@@ -1598,7 +1598,7 @@ function editVisitaHTML(payload){
       </div>
       <div class="field">
         <label>Observações</label>
-        <textarea name="observacoes" rows="4">${esc(v.observacoes)}</textarea>
+        <textarea name="observacoes" rows="4" maxlength="10000">${esc(v.observacoes)}</textarea>
       </div>
       <p id="form-editar-visita-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
       <div class="modal-actions">
@@ -1924,6 +1924,11 @@ function attachGlobalHandlers(){
         errEl.style.display = 'block';
         return;
       }
+      if(observacoes.length > 10000){
+        errEl.textContent = 'As observações não podem ter mais de 10000 caracteres.';
+        errEl.style.display = 'block';
+        return;
+      }
       errEl.style.display = 'none';
       const visita = {
         dataHora: new Date(dataHora).toISOString(),
@@ -1961,6 +1966,16 @@ function attachModalHandlers(){
       }
       if(!dataHora){
         errEl.textContent = 'Indica a data e hora da visita.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if(!observacoes){
+        errEl.textContent = 'Seleciona o idoso, a data/hora e escreve uma observação.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if(observacoes.length > 10000){
+        errEl.textContent = 'As observações não podem ter mais de 10000 caracteres.';
         errEl.style.display = 'block';
         return;
       }

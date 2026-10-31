@@ -322,7 +322,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  getFirestore, initializeFirestore, memoryLocalCache, collection, doc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
+  getFirestore, initializeFirestore, memoryLocalCache, collection, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 /* SUBSTITUI este objeto pelos dados do TEU projeto Firebase.
@@ -381,6 +381,8 @@ function showErrorBanner(msg, type){
 /* ============================= ESTADO ============================= */
 let state = {
   user: null,
+  papel: null,          // 'admin' | 'militar' (lido de autorizados/{uid})
+  acessoNegado: null,   // {motivo} quando a conta não está autorizada
   idosos: [],
   visitadores: [],
   loaded: false,
@@ -409,13 +411,58 @@ function startListening(){
     state.idosos = snap.docs.map(d=>d.data());
     state.idososLoaded = true;
     updateLoaded();
-  }, (err)=>{ showErrorBanner('Erro a ler idosos: ' + err.message); });
+  }, (err)=>{ if(err.code==='permission-denied'){ negarAcesso('sem-permissao'); return; } showErrorBanner('Erro a ler idosos: ' + err.message); });
 
   unsubVisitadores = onSnapshot(collection(db,'visitadores'), (snap)=>{
     state.visitadores = snap.docs.map(d=>d.data());
     state.visitadoresLoaded = true;
     updateLoaded();
-  }, (err)=>{ showErrorBanner('Erro a ler visitadores: ' + err.message); });
+  }, (err)=>{ if(err.code==='permission-denied'){ negarAcesso('sem-permissao'); return; } showErrorBanner('Erro a ler visitadores: ' + err.message); });
+}
+/* ============================= AUTORIZAÇÃO ============================= */
+/* Só entra quem tiver um documento autorizados/{uid} com papel 'admin' ou
+   'militar' (criado pelo administrador na consola Firebase). */
+function ehAdmin(){ return state.papel === 'admin'; }
+function negarAcesso(motivo){
+  stopListening();
+  state.papel = null;
+  state.acessoNegado = {motivo};
+  render();
+}
+async function verificarAutorizacao(user){
+  try{
+    const snap = await getDoc(doc(db, 'autorizados', user.uid));
+    const d = snap.exists() ? snap.data() : null;
+    if(!d || d.ativo === false || !['admin','militar'].includes(d.papel)){ negarAcesso('nao-autorizado'); return; }
+    if(!state.user || state.user.uid !== user.uid) return; // entretanto saiu
+    state.papel = d.papel;
+    state.acessoNegado = null;
+    startListening();
+    render();
+  }catch(err){
+    if(err.code === 'permission-denied'){ negarAcesso('nao-autorizado'); return; }
+    negarAcesso('erro');
+    showErrorBanner('Não foi possível verificar a autorização: ' + err.message);
+  }
+}
+function renderSemAutorizacao(){
+  const u = state.user || {};
+  const motivo = (state.acessoNegado||{}).motivo;
+  const texto = motivo === 'erro'
+    ? 'Não foi possível confirmar se esta conta tem acesso. Verifica a ligação à internet e tenta outra vez.'
+    : 'Esta conta ainda não está autorizada a usar a aplicação. Pede ao administrador para te autorizar, indicando o e-mail e o código abaixo.';
+  return `
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="eyebrow">Rede de Apoio</div>
+      <h2>Conta sem autorização</h2>
+      <p class="hint">${texto}</p>
+      <p style="font-size:13px;margin:12px 0 4px;"><strong>E-mail:</strong> ${esc(u.email||'—')}</p>
+      <p class="mono" style="font-size:12px;word-break:break-all;margin:0 0 16px;"><strong>Código (UID):</strong> ${esc(u.uid||'—')}</p>
+      <button class="btn accent" type="button" id="btn-tentar-novamente" style="width:100%;margin-bottom:8px;">Tentar novamente</button>
+      <button class="btn ghost" type="button" id="btn-sair-sem-acesso" style="width:100%;">Terminar sessão</button>
+    </div>
+  </div>`;
 }
 function stopListening(){
   if(unsubIdosos) unsubIdosos();
@@ -525,6 +572,7 @@ async function restWriteDoc(collectionName, id, data, opts){
   }), 8000, `guardar em ${collectionName}`);
   if(!res.ok){
     const errBody = await res.text().catch(()=>'');
+    if(res.status === 403){ const e403 = new Error('sem permissão para esta operação (conta não autorizada ou dados inválidos).'); e403.status = 403; e403.body = errBody; throw e403; }
     const e = new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
     e.status = res.status; e.body = errBody;
     throw e;
@@ -539,6 +587,7 @@ async function restDeleteDoc(collectionName, id){
   }), 8000, `eliminar de ${collectionName}`);
   if(!res.ok){
     const errBody = await res.text().catch(()=>'');
+    if(res.status === 403) throw new Error('sem permissão para eliminar (só o administrador pode eliminar).');
     throw new Error(`HTTP ${res.status}: ${errBody.slice(0,200)}`);
   }
 }
@@ -724,6 +773,17 @@ function render(){
   const app = document.getElementById('app');
   if(NEEDS_SETUP){ app.innerHTML = renderSetupNeeded(); return; }
   if(!state.user){ app.innerHTML = renderLogin(); attachLoginHandlers(); return; }
+  if(state.acessoNegado){
+    app.innerHTML = renderSemAutorizacao();
+    const bs = document.getElementById('btn-sair-sem-acesso'); if(bs) bs.onclick = ()=>signOut(auth);
+    const bt = document.getElementById('btn-tentar-novamente');
+    if(bt) bt.onclick = ()=>{ state.acessoNegado = null; render(); verificarAutorizacao(state.user); };
+    return;
+  }
+  if(!state.papel){
+    app.innerHTML = `<div style="padding:60px;text-align:center;color:var(--muted);width:100%;">A verificar autorização…</div>`;
+    return;
+  }
   if(!state.loaded){
     app.innerHTML = `<div style="padding:60px;text-align:center;color:var(--muted);width:100%;">A carregar dados…</div>`;
     return;
@@ -752,7 +812,7 @@ function renderSetupNeeded(){
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false; // usar o ficheiro firestore.rules das propostas
     }
   }
 }</pre>
@@ -831,7 +891,7 @@ function renderSidebar(){
         </button>`).join('')}
     </nav>
     <div class="sidebar-user">
-      <span class="email">${esc(state.user.email)}</span>
+      <span class="email">${esc(state.user.email)}${state.papel ? ` · ${state.papel==='admin'?'Administrador':'Militar'}` : ''}</span>
       <button class="btn ghost sm" data-action="logout" style="width:100%;">Terminar sessão</button>
       <button class="btn ghost sm" data-action="testar-ligacao" style="width:100%;margin-top:8px;">🔧 Testar ligação</button>
     </div>
@@ -873,7 +933,7 @@ function renderIdososTab(){
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn ghost" data-action="import-excel">📄 Importar Excel</button>
-        <button class="btn ghost" data-action="export-excel">⬇️ Exportar Excel</button>
+        ${ehAdmin() ? `<button class="btn ghost" data-action="export-excel">⬇️ Exportar Excel</button>` : ''}
         <button class="btn accent" data-action="new-idoso">+ Novo idoso</button>
       </div>
     </div>
@@ -1190,7 +1250,7 @@ function renderVisitadoresTab(){
             <td>${esc(v.posto)}</td>
             <td class="actions">
               <button class="btn ghost sm" data-action="edit-visitador" data-id="${v.id}">Editar</button>
-              <button class="btn danger sm" data-action="delete-visitador" data-id="${v.id}">Remover</button>
+              ${ehAdmin() ? `<button class="btn danger sm" data-action="delete-visitador" data-id="${v.id}">Remover</button>` : ''}
             </td>
           </tr>`).join('')}
       </tbody>
@@ -1309,7 +1369,7 @@ function fichaHTML(id){
     <div class="modal-actions">
       <button class="btn accent" data-action="go-visita" data-id="${esc(i.id)}">Registar visita</button>
       <button class="btn ghost" data-action="edit-idoso" data-id="${esc(i.id)}">Editar ficha</button>
-      <button class="btn danger" data-action="delete-idoso" data-id="${esc(i.id)}">Eliminar</button>
+      ${ehAdmin() ? `<button class="btn danger" data-action="delete-idoso" data-id="${esc(i.id)}">Eliminar</button>` : ''}
     </div>
   `;
 }
@@ -1703,6 +1763,7 @@ function attachGlobalHandlers(){
       else if(action==='open-ficha'){ state.modal={type:'ficha', payload:id}; render(); }
       else if(action==='edit-idoso'){ state.modal={type:'idosoForm', payload:id}; render(); }
       else if(action==='delete-idoso'){
+        if(!ehAdmin()){ showToast('Só o administrador pode eliminar fichas.'); return; }
         if(confirm('Eliminar esta ficha de idoso? Esta ação não pode ser desfeita.')){
           state.modal=null; render();
           idosoDelete(id).then(ok=>{ if(ok) showToast('Idoso eliminado.'); });
@@ -1711,6 +1772,7 @@ function attachGlobalHandlers(){
       else if(action==='new-visitador'){ state.modal={type:'visitadorForm', payload:null}; render(); }
       else if(action==='edit-visitador'){ state.modal={type:'visitadorForm', payload:id}; render(); }
       else if(action==='delete-visitador'){
+        if(!ehAdmin()){ showToast('Só o administrador pode remover militares.'); return; }
         if(confirm('Remover este militar?')){
           visitadorDelete(id).then(ok=>{ if(ok) showToast('Visitador removido.'); });
         }
@@ -1726,7 +1788,7 @@ function attachGlobalHandlers(){
       else if(action==='close-modal'){ closeModal(); }
       else if(action==='geocode-morada'){ geocodeMorada(); }
       else if(action==='import-excel'){ state.modal={type:'importExcel', payload:null}; render(); }
-      else if(action==='export-excel'){ exportarExcel(); }
+      else if(action==='export-excel'){ if(!ehAdmin()){ showToast('Só o administrador pode exportar.'); return; } exportarExcel(); }
       else if(action==='confirmar-importacao'){ confirmarImportacao(); }
       else if(action==='logout'){ signOut(auth); }
       else if(action==='testar-ligacao'){ testarLigacao(); }
@@ -1924,8 +1986,10 @@ function attachModalHandlers(){
 if(!NEEDS_SETUP){
   onAuthStateChanged(auth, (user)=>{
     state.user = user;
+    state.papel = null;
+    state.acessoNegado = null;
     if(user){
-      startListening();
+      verificarAutorizacao(user);
     } else {
       stopListening();
     }

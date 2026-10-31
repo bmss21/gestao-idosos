@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migrar visitas — Gestão de Idosos (só administrador)</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#1d2733}
+h1{font-size:20px} button{font-size:16px;padding:10px 16px;margin:6px 6px 6px 0;border-radius:8px;border:1px solid #888;background:#f2f4f7}
+button.prim{background:#0b5d3b;color:#fff;border-color:#0b5d3b} input{font-size:16px;padding:8px;width:100%;box-sizing:border-box;margin:4px 0 10px}
+#log{white-space:pre-wrap;background:#f6f6f6;border:1px solid #ddd;padding:10px;font:13px monospace;max-height:50vh;overflow:auto}
+.aviso{background:#fff7e0;border:1px solid #e0b000;padding:10px;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>Migrar visitas antigas (uma vez só)</h1>
+<p class="aviso">Copia as visitas que estão dentro de cada ficha para o novo formato (um registo por visita).
+A lista antiga <b>não é apagada</b>. Pode ser corrida várias vezes: as fichas já migradas são saltadas.
+Faça-o numa hora em que ninguém esteja a registar visitas. Primeiro carregue em <b>Simular</b>.</p>
+<div id="entrar">
+  <label>E-mail do administrador</label><input id="email" type="email" autocomplete="username">
+  <label>Palavra-passe</label><input id="pass" type="password" autocomplete="current-password">
+  <button class="prim" id="btnEntrar">Entrar</button>
+</div>
+<div id="acoes" style="display:none">
+  <p id="quem"></p>
+  <button id="btnSimular">Simular (não grava nada)</button>
+  <button class="prim" id="btnMigrar">Migrar agora</button>
+</div>
+<div id="log"></div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+// Núcleo da migração das visitas antigas (lista dentro da ficha) para
+// documentos idosos/{id}/visitas/{vid}. Usado pela página migrar-visitas.html
+// e pelos testes no emulador. Não apaga a lista antiga (fica como cópia).
+const MAX_ESCRITAS = 450;
+
+function valorRest(v){
+  if(!v) return null;
+  if('nullValue' in v) return null;
+  if('stringValue' in v) return v.stringValue;
+  if('integerValue' in v) return Number(v.integerValue);
+  if('doubleValue' in v) return v.doubleValue;
+  if('booleanValue' in v) return v.booleanValue;
+  if('timestampValue' in v) return v.timestampValue;
+  if('arrayValue' in v) return (v.arrayValue.values||[]).map(valorRest);
+  if('mapValue' in v){ const o={}; const f=v.mapValue.fields||{}; for(const k in f) o[k]=valorRest(f[k]); return o; }
+  return null;
+}
+const s = (x)=>({stringValue: String(x)});
+
+// Verifica se a ficha passa nas regras novas (idosoValido). Uma ficha que não
+// passe deixa de poder ser editada (e migrada) até ser corrigida pelo admin.
+function problemasFicha(docRest){
+  const d = {}; const f = docRest.fields || {}; for(const k in f) d[k] = valorRest(f[k]);
+  const id = decodeURIComponent(docRest.name.split('/').pop()); const p = [];
+  const txt = (k, max)=>{ if(k in d && d[k] != null && !(typeof d[k] === 'string' && d[k].length <= max)) p.push(`${k} não é texto (ou é demasiado longo)`); };
+  if(d.id !== id) p.push(`campo id (“${d.id}”) diferente do documento`);
+  if(typeof d.nome !== 'string' || !d.nome.length || d.nome.length > 200) p.push('nome em falta ou inválido');
+  if(typeof d.morada !== 'string' || d.morada.length > 500) p.push('morada em falta ou não é texto');
+  for(const k of ['lat','lng']) if(k in d && d[k] != null && typeof d[k] !== 'number') p.push(`${k} não é número`);
+  txt('idSiiopP', 50); txt('contacto', 100); txt('observacoes', 10000);
+  if('visitas' in d && !Array.isArray(d.visitas)) p.push('visitas não é lista');
+  if('visitasMigradas' in d && typeof d.visitasMigradas !== 'boolean') p.push('visitasMigradas não é verdadeiro/falso');
+  return p.map(x=>`${id}: ${x}`);
+}
+
+// Prepara as escritas de UM idoso (um único commit atómico).
+// Devolve null se não houver nada a migrar.
+function planearIdoso(docRest, adminUid){
+  const f = docRest.fields || {};
+  if(f.visitasMigradas && f.visitasMigradas.booleanValue === true) return null;
+  const visitas = valorRest(f.visitas) || [];
+  if(!Array.isArray(visitas) || visitas.length === 0) return null;
+  if(visitas.length + 1 > MAX_ESCRITAS) throw new Error(`Idoso ${docRest.name} tem ${visitas.length} visitas: demasiadas para um só commit.`);
+  const idosoId = decodeURIComponent(docRest.name.split('/').pop());
+  const avisos = [];
+  const writes = visitas.map((v, k)=>{
+    v = v || {};
+    let dataHora = typeof v.dataHora === 'string' ? v.dataHora : '';
+    let dataMs = Date.parse(dataHora);
+    if(isNaN(dataMs)){ avisos.push(`${idosoId} visita #${k+1}: data inválida (“${dataHora}”), ficou 1970-01-01.`); dataMs = 0; dataHora = new Date(0).toISOString(); }
+    let visitadorId = (typeof v.visitadorId === 'string' && v.visitadorId.trim()) ? v.visitadorId.trim().slice(0,100) : '';
+    if(!visitadorId){ avisos.push(`${idosoId} visita #${k+1}: sem militar, ficou “desconhecido”.`); visitadorId = 'desconhecido'; }
+    let observacoes = (typeof v.observacoes === 'string' && v.observacoes.trim()) ? v.observacoes.slice(0,10000) : '(sem observações)';
+    return {
+      update: {
+        name: `${docRest.name}/visitas/mig-${String(k).padStart(4,'0')}`,
+        fields: {
+          idosoId: s(idosoId), dataHora: s(dataHora.slice(0,40)), dataMs: {integerValue: String(dataMs)},
+          visitadorId: s(visitadorId), observacoes: s(observacoes),
+          criadoPor: s(adminUid), migrado: {booleanValue: true}, origemIndice: {integerValue: String(k)}
+        }
+      },
+      updateTransforms: [{fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME'}]
+    };
+  });
+  // Marca a ficha como migrada, só se ninguém a alterou desde a leitura.
+  writes.push({
+    update: {name: docRest.name, fields: {visitasMigradas: {booleanValue: true}}},
+    updateMask: {fieldPaths: ['visitasMigradas']},
+    currentDocument: {updateTime: docRest.updateTime}
+  });
+  return {idosoId, n: visitas.length, writes, avisos};
+}
+
+// Corre a migração completa. opts: {base, projectId, token: async()=>string, adminUid, fetch, log, simular}
+async function migrar(opts){
+  const f = opts.fetch || fetch, log = opts.log || (()=>{});
+  const raiz = `${opts.base}/v1/projects/${opts.projectId}/databases/(default)/documents`;
+  const cab = async()=>({'Authorization': 'Bearer ' + await opts.token(), 'Content-Type': 'application/json'});
+  const res = {idosos: 0, migrados: 0, visitas: 0, saltados: 0, erros: [], avisos: [], fichasInvalidas: []};
+  let pageToken = '';
+  do{
+    const r = await f(`${raiz}/idosos?pageSize=200${pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''}`, {headers: await cab()});
+    if(!r.ok) throw new Error(`Erro a ler idosos: HTTP ${r.status} ${(await r.text()).slice(0,200)}`);
+    const j = await r.json();
+    for(const doc of (j.documents || [])){
+      res.idosos++;
+      res.fichasInvalidas.push(...problemasFicha(doc));
+      let plano;
+      try{ plano = planearIdoso(doc, opts.adminUid); }catch(e){ res.erros.push(e.message); continue; }
+      if(!plano){ res.saltados++; continue; }
+      res.avisos.push(...plano.avisos);
+      if(opts.simular){ log(`[simulação] ${plano.idosoId}: ${plano.n} visita(s)`); res.migrados++; res.visitas += plano.n; continue; }
+      const c = await f(`${raiz}:commit`, {method: 'POST', headers: await cab(), body: JSON.stringify({writes: plano.writes})});
+      if(c.ok){ res.migrados++; res.visitas += plano.n; log(`✔ ${plano.idosoId}: ${plano.n} visita(s)`); }
+      else{
+        const t = await c.text();
+        const msg = /FAILED_PRECONDITION/.test(t) ? 'a ficha foi alterada durante a migração — volte a correr' : `HTTP ${c.status} ${t.slice(0,200)}`;
+        res.erros.push(`${plano.idosoId}: ${msg}`); log(`✘ ${plano.idosoId}: ${msg}`);
+      }
+    }
+    pageToken = j.nextPageToken || '';
+  }while(pageToken);
+  return res;
+}
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDwwZj_yGXeKs3D5Vxxx3z6HIURPu2R4BQ",
+  authDomain: "idosos-oaz-v2.firebaseapp.com",
+  projectId: "idosos-oaz-v2",
+  storageBucket: "idosos-oaz-v2.firebasestorage.app",
+  messagingSenderId: "915370419185",
+  appId: "1:915370419185:web:63b614013d2444c3915a50"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const $ = (id)=>document.getElementById(id);
+const log = (t)=>{ $('log').textContent += t + '\n'; $('log').scrollTop = 1e9; };
+$('btnEntrar').onclick = async ()=>{
+  try{
+    const cred = await signInWithEmailAndPassword(auth, $('email').value.trim(), $('pass').value);
+    $('entrar').style.display = 'none'; $('acoes').style.display = '';
+    $('quem').textContent = 'Sessão: ' + cred.user.email + ' (UID ' + cred.user.uid + ')';
+  }catch(e){ log('Erro ao entrar: ' + e.message); }
+};
+async function correr(simular){
+  $('btnSimular').disabled = $('btnMigrar').disabled = true;
+  if(!simular && !confirm('Migrar as visitas agora?')){ $('btnSimular').disabled = $('btnMigrar').disabled = false; return; }
+  log(simular ? '--- Simulação ---' : '--- Migração ---');
+  try{
+    const r = await migrar({base: 'https://firestore.googleapis.com', projectId: firebaseConfig.projectId,
+      token: ()=>auth.currentUser.getIdToken(), adminUid: auth.currentUser.uid, log, simular});
+    log(`Fichas lidas: ${r.idosos} · migradas: ${r.migrados} (${r.visitas} visitas) · já migradas/sem visitas: ${r.saltados} · erros: ${r.erros.length}`);
+    if(r.fichasInvalidas.length) log(`Fichas que as regras novas vão recusar ao editar (corrigir na app ou na consola): ${r.fichasInvalidas.length}`);
+    r.fichasInvalidas.forEach(a=>log('Ficha: ' + a));
+    r.avisos.forEach(a=>log('Aviso: ' + a)); r.erros.forEach(e=>log('Erro: ' + e));
+    if(r.erros.some(e=>/403|PERMISSION/.test(e))) log('Sem permissão: confirme que esta conta tem papel "admin" em autorizados/{UID} e que as regras novas estão publicadas.');
+  }catch(e){ log('Erro: ' + e.message); }
+  $('btnSimular').disabled = $('btnMigrar').disabled = false;
+}
+$('btnSimular').onclick = ()=>correr(true);
+$('btnMigrar').onclick = ()=>correr(false);
+</script>
+</body>
+</html>

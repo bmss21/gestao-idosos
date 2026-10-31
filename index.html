@@ -322,7 +322,7 @@ import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  getFirestore, initializeFirestore, memoryLocalCache, collection, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
+  getFirestore, initializeFirestore, memoryLocalCache, collection, collectionGroup, doc, getDoc, setDoc, deleteDoc, updateDoc, onSnapshot, arrayUnion
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 /* SUBSTITUI este objeto pelos dados do TEU projeto Firebase.
@@ -383,10 +383,13 @@ let state = {
   user: null,
   papel: null,          // 'admin' | 'militar' (lido de autorizados/{uid})
   acessoNegado: null,   // {motivo} quando a conta não está autorizada
-  idosos: [],
+  idosos: [],          // fichas com o campo "visitas" já combinado (antigas + novas)
+  idososRaw: [],       // fichas tal como estão na base de dados
+  visitasPorIdoso: {}, // visitas da subcoleção idosos/{id}/visitas, por idoso
   visitadores: [],
   loaded: false,
   idososLoaded: false,
+  visitasLoaded: false,
   visitadoresLoaded: false,
   activeTab: 'idosos',
   search: '',
@@ -395,7 +398,7 @@ let state = {
   markers: {},
   routeSelection: new Set()
 };
-let unsubIdosos = null, unsubVisitadores = null;
+let unsubIdosos = null, unsubVisitadores = null, unsubVisitas = null;
 let lastReportText = null;
 
 const STATUS = {
@@ -408,7 +411,8 @@ function getVar(name){ return getComputedStyle(document.documentElement).getProp
 /* ============================= FIRESTORE (dados em tempo real) ============================= */
 function startListening(){
   unsubIdosos = onSnapshot(collection(db,'idosos'), (snap)=>{
-    state.idosos = snap.docs.map(d=>d.data());
+    state.idososRaw = snap.docs.map(d=>d.data());
+    state.idosos = combinarVisitas();
     state.idososLoaded = true;
     updateLoaded();
   }, (err)=>{ if(err.code==='permission-denied'){ negarAcesso('sem-permissao'); return; } showErrorBanner('Erro a ler idosos: ' + err.message); });
@@ -418,6 +422,33 @@ function startListening(){
     state.visitadoresLoaded = true;
     updateLoaded();
   }, (err)=>{ if(err.code==='permission-denied'){ negarAcesso('sem-permissao'); return; } showErrorBanner('Erro a ler visitadores: ' + err.message); });
+
+  // Cada visita é um documento próprio em idosos/{id}/visitas/{visitaId}
+  unsubVisitas = onSnapshot(collectionGroup(db,'visitas'), (snap)=>{
+    const porIdoso = {};
+    snap.docs.forEach(d=>{
+      const v = d.data();
+      const idosoId = v.idosoId || (d.ref.parent.parent && d.ref.parent.parent.id);
+      if(!idosoId) return;
+      (porIdoso[idosoId] = porIdoso[idosoId] || []).push({...v, _vid: d.id});
+    });
+    state.visitasPorIdoso = porIdoso;
+    state.idosos = combinarVisitas();
+    state.visitasLoaded = true;
+    updateLoaded();
+  }, (err)=>{ if(err.code==='permission-denied'){ negarAcesso('sem-permissao'); return; } showErrorBanner('Erro a ler visitas: ' + err.message); });
+}
+/* Junta as visitas antigas (lista dentro da ficha, antes da migração) com as
+   novas (subcoleção), por ordem de data. Depois da migração (visitasMigradas)
+   a lista antiga é ignorada. */
+function tempoVisita(v){ const t = Date.parse(v && v.dataHora); return isNaN(t) ? 0 : t; }
+function combinarVisitas(){
+  return state.idososRaw.map(raw=>{
+    const antigas = raw.visitasMigradas ? [] : (raw.visitas||[]).map((v,k)=>({...v, _legado:true, _k:k}));
+    const novas = state.visitasPorIdoso[raw.id] || [];
+    const visitas = antigas.concat(novas).sort((a,b)=> tempoVisita(a) - tempoVisita(b));
+    return {...raw, visitas};
+  });
 }
 /* ============================= AUTORIZAÇÃO ============================= */
 /* Só entra quem tiver um documento autorizados/{uid} com papel 'admin' ou
@@ -467,9 +498,10 @@ function renderSemAutorizacao(){
 function stopListening(){
   if(unsubIdosos) unsubIdosos();
   if(unsubVisitadores) unsubVisitadores();
-  unsubIdosos = unsubVisitadores = null;
-  state.idosos = []; state.visitadores = [];
-  state.idososLoaded = state.visitadoresLoaded = false;
+  if(unsubVisitas) unsubVisitas();
+  unsubIdosos = unsubVisitadores = unsubVisitas = null;
+  state.idosos = []; state.idososRaw = []; state.visitasPorIdoso = {}; state.visitadores = [];
+  state.idososLoaded = state.visitadoresLoaded = state.visitasLoaded = false;
 }
 setInterval(()=>{
   if(!state.pendingRender) return;
@@ -480,7 +512,7 @@ setInterval(()=>{
 }, 2000);
 function updateLoaded(){
   const jaCarregado = state.loaded;
-  state.loaded = state.idososLoaded && state.visitadoresLoaded;
+  state.loaded = state.idososLoaded && state.visitadoresLoaded && state.visitasLoaded;
   // Se alguém está a preencher um formulário (ou a escrever), NÃO refazer o ecrã:
   // senão os dados em preenchimento seriam apagados por uma alteração feita por outra pessoa.
   if(jaCarregado && state.loaded){
@@ -578,6 +610,36 @@ async function restWriteDoc(collectionName, id, data, opts){
     throw e;
   }
 }
+/* Escrita atómica de vários documentos (REST documents:commit). Permite
+   precondições (o documento existe / não existe) e valores do servidor
+   (hora de registo), sem passar pelo SDK. */
+function nomeDocumento(caminho){
+  return `projects/${firebaseConfig.projectId}/databases/(default)/documents/${caminho}`;
+}
+async function restCommit(writes, label){
+  const token = await auth.currentUser.getIdToken();
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents:commit`;
+  const res = await withTimeout(fetch(url, {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer '+token, 'Content-Type':'application/json'},
+    body: JSON.stringify({writes})
+  }), 8000, label || 'guardar');
+  if(!res.ok){
+    const errBody = await res.text().catch(()=>'');
+    const e = new Error(res.status === 403
+      ? 'sem permissão para esta operação (conta não autorizada ou dados inválidos).'
+      : `HTTP ${res.status}: ${errBody.slice(0,200)}`);
+    e.status = res.status; e.body = errBody;
+    throw e;
+  }
+  return res.json();
+}
+function caminhoVisita(idosoId, visitaId){
+  return `idosos/${encodeURIComponent(idosoId)}/visitas/${encodeURIComponent(visitaId)}`;
+}
+function novoIdVisita(){
+  return 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+}
 async function restDeleteDoc(collectionName, id){
   const token = await auth.currentUser.getIdToken();
   const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/${collectionName}/${encodeURIComponent(id)}`;
@@ -622,17 +684,55 @@ async function idosoUpdateFields(id, data){
   }catch(e){ showErrorBanner('Erro ao guardar idoso: ' + e.message); return false; }
 }
 async function idosoDelete(id){
-  try{ await restDeleteDoc('idosos', id); return true; }
+  try{
+    const visitas = state.visitasPorIdoso[id] || [];
+    const writes = visitas.map(v=>({delete: nomeDocumento(caminhoVisita(id, v._vid))}));
+    writes.push({delete: nomeDocumento(`idosos/${encodeURIComponent(id)}`)});
+    for(let k=0; k<writes.length; k+=450){ await restCommit(writes.slice(k, k+450), 'eliminar idoso'); }
+    return true;
+  }
   catch(e){ showErrorBanner('Erro ao eliminar idoso: ' + e.message); return false; }
 }
 async function idosoRegistarVisita(id, visita){
   try{
-    const i = findIdoso(id) || {};
-    const visitas = (i.visitas ? i.visitas.slice() : []);
-    visitas.push(visita);
-    await restWriteDoc('idosos', id, {...i, id, visitas, dataUltimaVisita: visita.dataHora});
+    const visitaId = novoIdVisita();
+    const dados = {
+      idosoId: id,
+      dataHora: visita.dataHora,
+      dataMs: tempoVisita(visita),
+      visitadorId: visita.visitadorId,
+      observacoes: visita.observacoes,
+      criadoPor: auth.currentUser.uid
+    };
+    await restCommit([{
+      update: {name: nomeDocumento(caminhoVisita(id, visitaId)), fields: toFirestoreFields(dados)},
+      currentDocument: {exists: false},
+      updateTransforms: [{fieldPath: 'criadoEm', setToServerValue: 'REQUEST_TIME'}]
+    }], 'registar visita');
     return true;
-  }catch(e){ showErrorBanner('Erro ao registar visita: ' + e.message); return false; }
+  }catch(e){
+    showErrorBanner('Erro ao registar visita: ' + (e.status===403 ? 'sem permissão, ou a ficha deste idoso já não existe.' : e.message));
+    return false;
+  }
+}
+/* Edita só os campos da visita (não toca na ficha nem nas outras visitas). */
+async function idosoEditarVisita(idosoId, visitaId, campos){
+  try{
+    const dados = {
+      visitadorId: campos.visitadorId,
+      dataHora: campos.dataHora,
+      dataMs: tempoVisita(campos),
+      observacoes: campos.observacoes,
+      alteradoPor: auth.currentUser.uid
+    };
+    await restCommit([{
+      update: {name: nomeDocumento(caminhoVisita(idosoId, visitaId)), fields: toFirestoreFields(dados)},
+      updateMask: {fieldPaths: Object.keys(dados)},
+      currentDocument: {exists: true},
+      updateTransforms: [{fieldPath: 'alteradoEm', setToServerValue: 'REQUEST_TIME'}]
+    }], 'editar visita');
+    return true;
+  }catch(e){ showErrorBanner('Erro ao editar visita: ' + e.message); return false; }
 }
 async function visitadorSave(id, data){
   try{ await restWriteDoc('visitadores', id, data); return true; }
@@ -1290,7 +1390,7 @@ function renderVisitaTab(prefillId){
         </div>
         <div class="field">
           <label>Observações *</label>
-          <textarea name="observacoes" rows="4" placeholder="Estado geral, necessidades identificadas, encaminhamentos…"></textarea>
+          <textarea name="observacoes" rows="4" maxlength="10000" placeholder="Estado geral, necessidades identificadas, encaminhamentos…"></textarea>
         </div>
         <p id="form-visita-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
         <button class="btn accent" type="submit">Guardar visita e gerar relatório</button>
@@ -1471,6 +1571,10 @@ function editVisitaHTML(payload){
     return `<div class="modal-head"><h2>Editar visita</h2><button class="close-x" data-action="close-modal">✕</button></div>
       <p class="hint">Não foi possível encontrar esta visita.</p>`;
   }
+  if(v._legado){
+    return `<div class="modal-head"><h2>Editar visita</h2><button class="close-x" data-action="close-modal">✕</button></div>
+      <p class="hint">Esta visita foi registada antes da mudança do modo de gravação. Para a poder editar, o administrador tem de correr primeiro a migração das visitas.</p>`;
+  }
   // datetime-local precisa do formato AAAA-MM-DDTHH:MM em hora local
   const d = new Date(v.dataHora);
   const dataHoraLocal = new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -1480,7 +1584,7 @@ function editVisitaHTML(payload){
       <button class="close-x" data-action="close-modal">✕</button>
     </div>
     <p class="hint" style="margin-top:-8px;">${esc(i.nome)} — ${esc(i.id)}</p>
-    <form id="form-editar-visita" data-idoso="${esc(idosoId)}" data-vidx="${vidx}" novalidate>
+    <form id="form-editar-visita" data-idoso="${esc(idosoId)}" data-vid="${esc(v._vid)}" novalidate>
       <div class="field">
         <label>Militar do SPC *</label>
         <select name="visitadorId">
@@ -1494,7 +1598,7 @@ function editVisitaHTML(payload){
       </div>
       <div class="field">
         <label>Observações</label>
-        <textarea name="observacoes" rows="4">${esc(v.observacoes)}</textarea>
+        <textarea name="observacoes" rows="4" maxlength="10000">${esc(v.observacoes)}</textarea>
       </div>
       <p id="form-editar-visita-error" style="color:var(--red);font-size:13px;font-weight:600;display:none;margin:0 0 12px;"></p>
       <div class="modal-actions">
@@ -1820,6 +1924,11 @@ function attachGlobalHandlers(){
         errEl.style.display = 'block';
         return;
       }
+      if(observacoes.length > 10000){
+        errEl.textContent = 'As observações não podem ter mais de 10000 caracteres.';
+        errEl.style.display = 'block';
+        return;
+      }
       errEl.style.display = 'none';
       const visita = {
         dataHora: new Date(dataHora).toISOString(),
@@ -1860,21 +1969,28 @@ function attachModalHandlers(){
         errEl.style.display = 'block';
         return;
       }
+      if(!observacoes){
+        errEl.textContent = 'Seleciona o idoso, a data/hora e escreve uma observação.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if(observacoes.length > 10000){
+        errEl.textContent = 'As observações não podem ter mais de 10000 caracteres.';
+        errEl.style.display = 'block';
+        return;
+      }
       errEl.style.display = 'none';
       const idosoId = formEditarVisita.dataset.idoso;
-      const vidx = parseInt(formEditarVisita.dataset.vidx, 10);
-      const i = findIdoso(idosoId);
-      if(!i || !i.visitas || !i.visitas[vidx]){
+      const visitaId = formEditarVisita.dataset.vid;
+      const existe = (state.visitasPorIdoso[idosoId]||[]).some(v=>v._vid===visitaId);
+      if(!existe){
         errEl.textContent = 'Esta visita já não existe.';
         errEl.style.display = 'block';
         return;
       }
-      const visitas = i.visitas.slice();
-      visitas[vidx] = {...visitas[vidx], visitadorId, dataHora: new Date(dataHora).toISOString(), observacoes};
-      const novaUltima = visitas[visitas.length-1].dataHora;
       const btn = formEditarVisita.querySelector('button[type=submit]');
       btn.disabled = true; btn.textContent = 'A guardar…';
-      const ok = await idosoSave(idosoId, {...i, visitas, dataUltimaVisita: novaUltima});
+      const ok = await idosoEditarVisita(idosoId, visitaId, {visitadorId, dataHora: new Date(dataHora).toISOString(), observacoes});
       state.modal = null; render();
       if(ok) showToast('Visita atualizada.');
     };
